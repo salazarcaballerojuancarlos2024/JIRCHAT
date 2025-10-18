@@ -1,0 +1,26 @@
+<configuration>
+    <!-- Appender que imprime en consola -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Mis paquetes (tu código) -->
+    <logger name="dcc" level="DEBUG"/>
+    <logger name="java_irc_chat_client" level="DEBUG"/>
+
+    <!-- PircBotX -->
+    <logger name="org.pircbotx" level="INFO"/>
+
+    <!-- Librerías externas: silenciar debug innecesario -->
+    <logger name="org.slf4j" level="WARN"/>
+    <logger name="java" level="WARN"/>
+    <logger name="javax" level="WARN"/>
+
+    <!-- Nivel root mínimo INFO -->
+    <root level="INFO">
+        <appender-ref ref="STDOUT"/>
+    </root>
+</configuration>
+

@@ -10,7 +10,6 @@
       prefWidth="1500" prefHeight="800"
       style="-fx-background-color: beige; -fx-padding: 10;">
 
-    <!-- Barra de búsqueda -->
     <HBox spacing="10">
         <Label text="Nombre de canal:"/>
         <TextField fx:id="txtBusqueda" promptText="Escribe el nombre del canal" HBox.hgrow="ALWAYS"/>
@@ -30,8 +29,12 @@
 
     <TableView fx:id="canalesTable" style="-fx-background-color: beige;" VBox.vgrow="ALWAYS">
         <columns>
-            <TableColumn fx:id="colCanal" text="Nombre Canal" prefWidth="100"/>
-            <TableColumn fx:id="colUsuarios" text="Usuarios" prefWidth="50"/>
+            <TableColumn fx:id="colCanal" text="Nombre Canal" prefWidth="250"/>
+            
+            <TableColumn fx:id="colPermisos" text="Permisos" prefWidth="100"/>
+            
+            <TableColumn fx:id="colUsuarios" text="Usuarios" prefWidth="80"/>
+            
             <TableColumn fx:id="colDescripcion" text="Descripción" prefWidth="1050"/>
         </columns>
     </TableView>

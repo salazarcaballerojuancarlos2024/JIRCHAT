@@ -2,6 +2,7 @@ package java_irc_chat_client;
 
 import javafx.application.Platform;
 import javafx.fxml.FXML;
+import javafx.scene.Scene;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.BorderPane;
@@ -11,24 +12,42 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
-import org.pircbotx.PircBotX;
-import Cliente_DCC.DCCManager;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+// ELIMINADO: import java.io.File; // Ya no es necesario
+
+// ⭐ ADAPTACIÓN: Usamos PircBot (la clase base) y nuestra ChatBot
+import org.jibble.pircbot.PircBot;
+import irc.ChatBot; 
+// ELIMINADO: import dcc.TransferManager; 
 
 public class PrivadoController {
+
+    private static final Logger log = LoggerFactory.getLogger(PrivadoController.class);
 
     @FXML private BorderPane rootPane;
     @FXML private VBox chatBox;
     @FXML private ScrollPane chatScrollPane;
     @FXML private TextField inputField_privado;
 
-    private PircBotX bot;
+    // ⭐ ADAPTACIÓN: Cambiamos el tipo a ChatBot
+    private ChatBot bot; 
     private String destinatario;
     private ChatController mainController;
     private SymbolMapper symbolMapper;
+    // ELIMINADO: private TransferManager TransferManager; // Ya no es necesario
 
-    public void setBot(PircBotX bot) { this.bot = bot; }
+    // ==========================================================
+    // CONFIGURACIÓN INICIAL
+    // ==========================================================
+    // ⭐ ADAPTACIÓN: setBot ahora acepta ChatBot
+    public void setBot(ChatBot bot) { this.bot = bot; } 
     public void setDestinatario(String nick) { this.destinatario = nick; }
     public void setMainController(ChatController mainController) { this.mainController = mainController; }
+    // ELIMINADO: public void setTransferManager(TransferManager TransferManager) { this.TransferManager = TransferManager; }
     public BorderPane getRootPane() { return rootPane; }
 
     @FXML
@@ -36,42 +55,36 @@ public class PrivadoController {
         symbolMapper = new SymbolMapper();
         inputField_privado.setOnAction(e -> sendMessage());
 
-        // Drag & Drop para archivos
-        rootPane.setOnDragOver(event -> {
-            if (event.getDragboard().hasFiles()) event.acceptTransferModes(javafx.scene.input.TransferMode.COPY);
-            event.consume();
-        });
-
-        rootPane.setOnDragDropped(event -> {
-            var db = event.getDragboard();
-            if (db.hasFiles()) {
-                db.getFiles().forEach(file -> {
-                    if (bot != null && destinatario != null) {
-                        sendDCCFile(file.getAbsolutePath());
-                    }
-                });
-            }
-            event.setDropCompleted(true);
-            event.consume();
-        });
+        // ELIMINADO: setupDragAndDrop();
     }
 
+    // ==========================================================
+    // DRAG & DROP Y ENVÍO DE ARCHIVOS (ELIMINADO)
+    // ==========================================================
+    // ELIMINADO: private void setupDragAndDrop() { ... }
+    // ELIMINADO: public void iniciarEnvioArchivo(File archivo) { ... }
 
+    // ==========================================================
+    // MENSAJES DE TEXTO
+    // ==========================================================
     private void sendMessage() {
         String text = inputField_privado.getText().trim();
         if (text.isEmpty() || bot == null || destinatario == null) return;
 
-        bot.sendIRC().message(destinatario, text);
+        // ⭐ ADAPTACIÓN: PircBot 1.5.0 usa bot.sendMessage(nick, message);
+        bot.sendMessage(destinatario, text); 
+
+        // Mostrar localmente
         appendMessage("Yo", text);
 
-        // --- Guardar en el log del privado ---
+        // Guardar en log
         ChatLogger.log(destinatario, "Yo", text);
 
         inputField_privado.clear();
     }
-
-
+    
     public void appendMessage(String usuario, String mensaje) {
+        // ... (se mantiene igual) ...
         Platform.runLater(() -> {
             Text userText = new Text("<" + usuario + "> ");
             userText.setFont(Font.font("Segoe UI Emoji", FontWeight.BOLD, 14));
@@ -86,8 +99,9 @@ public class PrivadoController {
             autoScroll();
         });
     }
-
+    
     public void appendSystemMessage(String mensaje) {
+        // ... (se mantiene igual) ...
         Platform.runLater(() -> {
             TextFlow messageFlow = parseIRCMessage(mensaje);
 
@@ -103,6 +117,7 @@ public class PrivadoController {
     }
 
     private TextFlow parseIRCMessage(String mensaje) {
+        // ... (se mantiene igual) ...
         TextFlow flow = new TextFlow();
         int i = 0;
         Color currentColor = Color.BLACK;
@@ -113,9 +128,13 @@ public class PrivadoController {
             if (c == '\u0003') { // Código de color IRC
                 i++;
                 StringBuilder num = new StringBuilder();
-                while (i < mensaje.length() && Character.isDigit(mensaje.charAt(i))) num.append(mensaje.charAt(i++));
-                try { currentColor = ircColorToFX(Integer.parseInt(num.toString())); } 
-                catch (Exception e) { currentColor = Color.BLACK; }
+                while (i < mensaje.length() && Character.isDigit(mensaje.charAt(i))) 
+                    num.append(mensaje.charAt(i++));
+                try { 
+                    currentColor = ircColorToFX(Integer.parseInt(num.toString())); 
+                } catch (Exception e) { 
+                    currentColor = Color.BLACK; 
+                }
             } else if (c == '\u000F') { // Reset
                 currentColor = Color.BLACK;
                 bold = false;
@@ -140,15 +159,29 @@ public class PrivadoController {
 
     private Color ircColorToFX(int code) {
         return switch (code) {
-            case 0 -> Color.WHITE; case 1 -> Color.BLACK; case 2 -> Color.DODGERBLUE;
-            case 3 -> Color.LIMEGREEN; case 4 -> Color.RED; case 5 -> Color.SADDLEBROWN;
-            case 6 -> Color.MEDIUMPURPLE; case 7 -> Color.ORANGE; case 8 -> Color.GOLD;
-            case 9 -> Color.GREEN; case 10 -> Color.CYAN; case 11 -> Color.TURQUOISE;
-            case 12 -> Color.ROYALBLUE; case 13 -> Color.HOTPINK; case 14 -> Color.DARKGREY; case 15 -> Color.LIGHTGREY;
+            case 0 -> Color.WHITE; 
+            case 1 -> Color.BLACK; 
+            case 2 -> Color.DODGERBLUE;
+            case 3 -> Color.LIMEGREEN; 
+            case 4 -> Color.RED; 
+            case 5 -> Color.SADDLEBROWN;
+            case 6 -> Color.MEDIUMPURPLE; 
+            case 7 -> Color.ORANGE; 
+            case 8 -> Color.GOLD;
+            case 9 -> Color.GREEN; 
+            case 10 -> Color.CYAN; 
+            case 11 -> Color.TURQUOISE;
+            case 12 -> Color.ROYALBLUE; 
+            case 13 -> Color.HOTPINK; 
+            case 14 -> Color.DARKGREY; 
+            case 15 -> Color.LIGHTGREY;
             default -> Color.BLACK;
         };
     }
 
+    // ==========================================================
+    // UTILIDADES DE UI
+    // ==========================================================
     private void autoScroll() {
         chatBox.layout();
         chatScrollPane.layout();
@@ -158,24 +191,6 @@ public class PrivadoController {
     public void initializeChat() {
         Platform.runLater(() -> chatScrollPane.setVvalue(1.0));
     }
+
     
-    private void sendDCCFile(String filePath) {
-        try {
-            var file = new java.io.File(filePath);
-            if (!file.exists()) return;
-
-            appendSystemMessage("Solicitud de envío de archivo: " + file.getName() + " a " + destinatario);
-
-            // Mensaje al receptor
-            bot.sendIRC().message(destinatario, "/DCC SEND " + file.getName() + " " + file.length());
-
-            // Guardamos el archivo en un mapa para seguimiento si quieres
-            DCCManager.addOutgoingFile(destinatario, file);
-        } catch (Exception e) {
-            appendSystemMessage("⚠ Error al enviar archivo: " + e.getMessage());
-        }
-    }
-
 }
-
-

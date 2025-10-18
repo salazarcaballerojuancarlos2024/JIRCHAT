@@ -1,0 +1,180 @@
+2025-10-08 17:13:39,922 INFO  [Thread-3] dcc.DccManager - 🛰️ DccManager inicializado con interfaz para bot 'akkiles4321'
+2025-10-08 17:34:10,864 INFO  [Thread-3] dcc.DccManager - 🛰️ DccManager inicializado con interfaz para bot 'akkiles4321'
+2025-10-08 17:35:57,173 DEBUG [JavaFX Application Thread] dcc.DccManager - 🧾 requestFileTransfer() | request=DccTransferRequest{type='TRANSFER_REQUEST', sender='akkiles4321', receiver='akkiles43211', ipOrigin='192.168.1.10', ipDest='0.0.0.0', portOrigin=49783, portDest=0, filePath='C:\temp\javachat\icons8-corazón-50.png', fileSize=0, timestamp=1759937757172}
+2025-10-08 17:35:57,179 INFO  [Thread-8] dcc.DccManager - 📤 Procesando solicitud DCC | Archivo='C:\temp\javachat\icons8-corazón-50.png' | Destinatario='akkiles43211'
+2025-10-08 17:35:57,179 DEBUG [Thread-8] dcc.DccManager - 🔧 sendFile() invocado | receiver='User(super=UserHostmask(extbanPrefix=null, nick=akkiles43211, login=akkiles4321, hostname=i-g52.ba7.9qik5o.IP), userId=38cb7d88-45f1-451e-b8b7-a75296d814c5, realName=, awayMessage=null, ircop=false, server=, hops=0)' | file='C:\temp\javachat\icons8-corazón-50.png' | passive=false
+2025-10-08 17:35:57,183 DEBUG [Thread-9] dcc.DccManager - 📤 Iniciando preparación de envío DCC...
+2025-10-08 17:36:46,891 DEBUG [JavaFX Application Thread] dcc.DccManager - 🧾 requestFileTransfer() | request=DccTransferRequest{type='TRANSFER_REQUEST', sender='akkiles4321', receiver='akkiles43211', ipOrigin='192.168.1.10', ipDest='0.0.0.0', portOrigin=49796, portDest=0, filePath='C:\temp\javachat\icons8-corazón-50.png', fileSize=0, timestamp=1759937806891}
+2025-10-08 17:36:46,892 INFO  [Thread-10] dcc.DccManager - 📤 Procesando solicitud DCC | Archivo='C:\temp\javachat\icons8-corazón-50.png' | Destinatario='akkiles43211'
+2025-10-08 17:36:46,892 DEBUG [Thread-10] dcc.DccManager - 🔧 sendFile() invocado | receiver='User(super=UserHostmask(extbanPrefix=null, nick=akkiles43211, login=akkiles4321, hostname=i-g52.ba7.9qik5o.IP), userId=38cb7d88-45f1-451e-b8b7-a75296d814c5, realName=, awayMessage=null, ircop=false, server=, hops=0)' | file='C:\temp\javachat\icons8-corazón-50.png' | passive=false
+2025-10-08 17:36:46,893 DEBUG [Thread-11] dcc.DccManager - 📤 Iniciando preparación de envío DCC...
+2025-10-08 17:37:36,101 DEBUG [JavaFX Application Thread] dcc.DccManager - 🧾 requestFileTransfer() | request=DccTransferRequest{type='TRANSFER_REQUEST', sender='akkiles4321', receiver='akkiles43211', ipOrigin='192.168.1.10', ipDest='0.0.0.0', portOrigin=49798, portDest=0, filePath='C:\temp\javachat\icons8-corazón-50.png', fileSize=0, timestamp=1759937856100}
+2025-10-08 17:37:36,101 INFO  [Thread-12] dcc.DccManager - 📤 Procesando solicitud DCC | Archivo='C:\temp\javachat\icons8-corazón-50.png' | Destinatario='akkiles43211'
+2025-10-08 17:37:36,102 DEBUG [Thread-12] dcc.DccManager - 🔧 sendFile() invocado | receiver='User(super=UserHostmask(extbanPrefix=null, nick=akkiles43211, login=akkiles4321, hostname=i-g52.ba7.9qik5o.IP), userId=38cb7d88-45f1-451e-b8b7-a75296d814c5, realName=, awayMessage=null, ircop=false, server=, hops=0)' | file='C:\temp\javachat\icons8-corazón-50.png' | passive=false
+2025-10-08 17:37:36,103 DEBUG [Thread-13] dcc.DccManager - 📤 Iniciando preparación de envío DCC...
+2025-10-08 17:38:13,867 DEBUG [JavaFX Application Thread] dcc.DccManager - 🧾 requestFileTransfer() | request=DccTransferRequest{type='TRANSFER_REQUEST', sender='akkiles43211', receiver='akkiles4321', ipOrigin='192.168.1.10', ipDest='0.0.0.0', portOrigin=49808, portDest=0, filePath='C:\temp\javachat\icons8-corazón-50.png', fileSize=0, timestamp=1759937893867}
+2025-10-08 17:38:13,871 INFO  [Thread-6] dcc.DccManager - 📤 Procesando solicitud DCC | Archivo='C:\temp\javachat\icons8-corazón-50.png' | Destinatario='akkiles4321'
+2025-10-08 17:38:13,871 DEBUG [Thread-6] dcc.DccManager - 🔧 sendFile() invocado | receiver='User(super=UserHostmask(extbanPrefix=null, nick=akkiles4321, login=akkiles4321, hostname=i-g52.ba7.9qik5o.IP), userId=5b643d36-b46b-4f83-8145-39a5330a9c45, realName=JIRCHAT, awayMessage=null, ircop=false, server=fresa.chatzona.org, hops=0)' | file='C:\temp\javachat\icons8-corazón-50.png' | passive=false
+2025-10-08 17:38:13,874 DEBUG [Thread-7] dcc.DccManager - 📤 Iniciando preparación de envío DCC...
+2025-10-08 17:40:57,189 ERROR [Thread-9] dcc.DccManager - 💥 Error en sendFile: Accept timed out
+java.net.SocketTimeoutException: Accept timed out
+	at java.base/sun.nio.ch.NioSocketImpl.timedAccept(NioSocketImpl.java:695)
+	at java.base/sun.nio.ch.NioSocketImpl.accept(NioSocketImpl.java:739)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:593)
+	at java.base/java.net.ServerSocket.platformImplAccept(ServerSocket.java:560)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:536)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:482)
+	at java.base/java.net.ServerSocket.accept(ServerSocket.java:441)
+	at org.pircbotx.dcc.DccHandler.sendFile(DccHandler.java:404)
+	at dcc.DccManager.lambda$0(DccManager.java:76)
+	at java.base/java.lang.Thread.run(Thread.java:1447)
+2025-10-08 17:41:46,897 ERROR [Thread-11] dcc.DccManager - 💥 Error en sendFile: Accept timed out
+java.net.SocketTimeoutException: Accept timed out
+	at java.base/sun.nio.ch.NioSocketImpl.timedAccept(NioSocketImpl.java:695)
+	at java.base/sun.nio.ch.NioSocketImpl.accept(NioSocketImpl.java:739)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:593)
+	at java.base/java.net.ServerSocket.platformImplAccept(ServerSocket.java:560)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:536)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:482)
+	at java.base/java.net.ServerSocket.accept(ServerSocket.java:441)
+	at org.pircbotx.dcc.DccHandler.sendFile(DccHandler.java:404)
+	at dcc.DccManager.lambda$0(DccManager.java:76)
+	at java.base/java.lang.Thread.run(Thread.java:1447)
+2025-10-08 17:42:21,307 DEBUG [JavaFX Application Thread] dcc.DccManager - 🧾 requestFileTransfer() | request=DccTransferRequest{type='TRANSFER_REQUEST', sender='akkiles4321', receiver='akkiles43211', ipOrigin='192.168.1.10', ipDest='0.0.0.0', portOrigin=49824, portDest=0, filePath='C:\temp\javachat\icons8-corazón-50.png', fileSize=0, timestamp=1759938141307}
+2025-10-08 17:42:21,308 INFO  [Thread-14] dcc.DccManager - 📤 Procesando solicitud DCC | Archivo='C:\temp\javachat\icons8-corazón-50.png' | Destinatario='akkiles43211'
+2025-10-08 17:42:21,308 DEBUG [Thread-14] dcc.DccManager - 🔧 sendFile() invocado | receiver='User(super=UserHostmask(extbanPrefix=null, nick=akkiles43211, login=akkiles4321, hostname=i-g52.ba7.9qik5o.IP), userId=38cb7d88-45f1-451e-b8b7-a75296d814c5, realName=, awayMessage=null, ircop=false, server=, hops=0)' | file='C:\temp\javachat\icons8-corazón-50.png' | passive=false
+2025-10-08 17:42:21,309 DEBUG [Thread-15] dcc.DccManager - 📤 Iniciando preparación de envío DCC...
+2025-10-08 17:42:36,106 ERROR [Thread-13] dcc.DccManager - 💥 Error en sendFile: Accept timed out
+java.net.SocketTimeoutException: Accept timed out
+	at java.base/sun.nio.ch.NioSocketImpl.timedAccept(NioSocketImpl.java:695)
+	at java.base/sun.nio.ch.NioSocketImpl.accept(NioSocketImpl.java:739)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:593)
+	at java.base/java.net.ServerSocket.platformImplAccept(ServerSocket.java:560)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:536)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:482)
+	at java.base/java.net.ServerSocket.accept(ServerSocket.java:441)
+	at org.pircbotx.dcc.DccHandler.sendFile(DccHandler.java:404)
+	at dcc.DccManager.lambda$0(DccManager.java:76)
+	at java.base/java.lang.Thread.run(Thread.java:1447)
+2025-10-08 17:43:09,926 DEBUG [JavaFX Application Thread] dcc.DccManager - 🧾 requestFileTransfer() | request=DccTransferRequest{type='TRANSFER_REQUEST', sender='akkiles4321', receiver='akkiles43211', ipOrigin='192.168.1.10', ipDest='0.0.0.0', portOrigin=49830, portDest=0, filePath='C:\temp\javachat\icons8-corazón-50.png', fileSize=0, timestamp=1759938189926}
+2025-10-08 17:43:09,927 INFO  [Thread-16] dcc.DccManager - 📤 Procesando solicitud DCC | Archivo='C:\temp\javachat\icons8-corazón-50.png' | Destinatario='akkiles43211'
+2025-10-08 17:43:09,927 DEBUG [Thread-16] dcc.DccManager - 🔧 sendFile() invocado | receiver='User(super=UserHostmask(extbanPrefix=null, nick=akkiles43211, login=akkiles4321, hostname=i-g52.ba7.9qik5o.IP), userId=38cb7d88-45f1-451e-b8b7-a75296d814c5, realName=, awayMessage=null, ircop=false, server=, hops=0)' | file='C:\temp\javachat\icons8-corazón-50.png' | passive=false
+2025-10-08 17:43:09,928 DEBUG [Thread-17] dcc.DccManager - 📤 Iniciando preparación de envío DCC...
+2025-10-08 17:43:13,878 ERROR [Thread-7] dcc.DccManager - 💥 Error en sendFile: Accept timed out
+java.net.SocketTimeoutException: Accept timed out
+	at java.base/sun.nio.ch.NioSocketImpl.timedAccept(NioSocketImpl.java:695)
+	at java.base/sun.nio.ch.NioSocketImpl.accept(NioSocketImpl.java:739)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:593)
+	at java.base/java.net.ServerSocket.platformImplAccept(ServerSocket.java:560)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:536)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:482)
+	at java.base/java.net.ServerSocket.accept(ServerSocket.java:441)
+	at org.pircbotx.dcc.DccHandler.sendFile(DccHandler.java:404)
+	at dcc.DccManager.lambda$0(DccManager.java:76)
+	at java.base/java.lang.Thread.run(Thread.java:1447)
+2025-10-08 17:43:36,385 DEBUG [JavaFX Application Thread] dcc.DccManager - 🧾 requestFileTransfer() | request=DccTransferRequest{type='TRANSFER_REQUEST', sender='akkiles4321', receiver='akkiles43211', ipOrigin='192.168.1.10', ipDest='0.0.0.0', portOrigin=49832, portDest=0, filePath='C:\temp\javachat\icons8-corazón-50.png', fileSize=0, timestamp=1759938216385}
+2025-10-08 17:43:36,386 INFO  [Thread-18] dcc.DccManager - 📤 Procesando solicitud DCC | Archivo='C:\temp\javachat\icons8-corazón-50.png' | Destinatario='akkiles43211'
+2025-10-08 17:43:36,387 DEBUG [Thread-18] dcc.DccManager - 🔧 sendFile() invocado | receiver='User(super=UserHostmask(extbanPrefix=null, nick=akkiles43211, login=akkiles4321, hostname=i-g52.ba7.9qik5o.IP), userId=38cb7d88-45f1-451e-b8b7-a75296d814c5, realName=, awayMessage=null, ircop=false, server=, hops=0)' | file='C:\temp\javachat\icons8-corazón-50.png' | passive=false
+2025-10-08 17:43:36,387 DEBUG [Thread-19] dcc.DccManager - 📤 Iniciando preparación de envío DCC...
+2025-10-08 17:47:21,312 ERROR [Thread-15] dcc.DccManager - 💥 Error en sendFile: Accept timed out
+java.net.SocketTimeoutException: Accept timed out
+	at java.base/sun.nio.ch.NioSocketImpl.timedAccept(NioSocketImpl.java:695)
+	at java.base/sun.nio.ch.NioSocketImpl.accept(NioSocketImpl.java:739)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:593)
+	at java.base/java.net.ServerSocket.platformImplAccept(ServerSocket.java:560)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:536)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:482)
+	at java.base/java.net.ServerSocket.accept(ServerSocket.java:441)
+	at org.pircbotx.dcc.DccHandler.sendFile(DccHandler.java:404)
+	at dcc.DccManager.lambda$0(DccManager.java:76)
+	at java.base/java.lang.Thread.run(Thread.java:1447)
+2025-10-08 17:48:09,931 ERROR [Thread-17] dcc.DccManager - 💥 Error en sendFile: Accept timed out
+java.net.SocketTimeoutException: Accept timed out
+	at java.base/sun.nio.ch.NioSocketImpl.timedAccept(NioSocketImpl.java:695)
+	at java.base/sun.nio.ch.NioSocketImpl.accept(NioSocketImpl.java:739)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:593)
+	at java.base/java.net.ServerSocket.platformImplAccept(ServerSocket.java:560)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:536)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:482)
+	at java.base/java.net.ServerSocket.accept(ServerSocket.java:441)
+	at org.pircbotx.dcc.DccHandler.sendFile(DccHandler.java:404)
+	at dcc.DccManager.lambda$0(DccManager.java:76)
+	at java.base/java.lang.Thread.run(Thread.java:1447)
+2025-10-08 17:48:36,389 ERROR [Thread-19] dcc.DccManager - 💥 Error en sendFile: Accept timed out
+java.net.SocketTimeoutException: Accept timed out
+	at java.base/sun.nio.ch.NioSocketImpl.timedAccept(NioSocketImpl.java:695)
+	at java.base/sun.nio.ch.NioSocketImpl.accept(NioSocketImpl.java:739)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:593)
+	at java.base/java.net.ServerSocket.platformImplAccept(ServerSocket.java:560)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:536)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:482)
+	at java.base/java.net.ServerSocket.accept(ServerSocket.java:441)
+	at org.pircbotx.dcc.DccHandler.sendFile(DccHandler.java:404)
+	at dcc.DccManager.lambda$0(DccManager.java:76)
+	at java.base/java.lang.Thread.run(Thread.java:1447)
+2025-10-08 17:48:45,231 DEBUG [JavaFX Application Thread] dcc.DccManager - 🧾 requestFileTransfer() | request=DccTransferRequest{type='TRANSFER_REQUEST', sender='akkiles4321', receiver='akkiles43211', ipOrigin='192.168.1.10', ipDest='0.0.0.0', portOrigin=49859, portDest=0, filePath='C:\temp\javachat\icons8-corazón-50.png', fileSize=0, timestamp=1759938525230}
+2025-10-08 17:48:45,231 INFO  [Thread-20] dcc.DccManager - 📤 Procesando solicitud DCC | Archivo='C:\temp\javachat\icons8-corazón-50.png' | Destinatario='akkiles43211'
+2025-10-08 17:48:45,232 DEBUG [Thread-20] dcc.DccManager - 🔧 sendFile() invocado | receiver='User(super=UserHostmask(extbanPrefix=null, nick=akkiles43211, login=akkiles4321, hostname=i-g52.ba7.9qik5o.IP), userId=38cb7d88-45f1-451e-b8b7-a75296d814c5, realName=, awayMessage=null, ircop=false, server=, hops=0)' | file='C:\temp\javachat\icons8-corazón-50.png' | passive=false
+2025-10-08 17:48:45,232 DEBUG [Thread-21] dcc.DccManager - 📤 Iniciando preparación de envío DCC...
+2025-10-08 17:49:05,370 DEBUG [JavaFX Application Thread] dcc.DccManager - 🧾 requestFileTransfer() | request=DccTransferRequest{type='TRANSFER_REQUEST', sender='akkiles4321', receiver='akkiles43211', ipOrigin='192.168.1.10', ipDest='0.0.0.0', portOrigin=49861, portDest=0, filePath='C:\temp\javachat\icons8-corazón-50.png', fileSize=0, timestamp=1759938545370}
+2025-10-08 17:49:05,370 INFO  [Thread-22] dcc.DccManager - 📤 Procesando solicitud DCC | Archivo='C:\temp\javachat\icons8-corazón-50.png' | Destinatario='akkiles43211'
+2025-10-08 17:49:05,371 DEBUG [Thread-22] dcc.DccManager - 🔧 sendFile() invocado | receiver='User(super=UserHostmask(extbanPrefix=null, nick=akkiles43211, login=akkiles4321, hostname=i-g52.ba7.9qik5o.IP), userId=38cb7d88-45f1-451e-b8b7-a75296d814c5, realName=, awayMessage=null, ircop=false, server=, hops=0)' | file='C:\temp\javachat\icons8-corazón-50.png' | passive=false
+2025-10-08 17:49:05,371 DEBUG [Thread-23] dcc.DccManager - 📤 Iniciando preparación de envío DCC...
+2025-10-08 17:49:22,601 DEBUG [JavaFX Application Thread] dcc.DccManager - 🧾 requestFileTransfer() | request=DccTransferRequest{type='TRANSFER_REQUEST', sender='akkiles4321', receiver='akkiles43211', ipOrigin='192.168.1.10', ipDest='0.0.0.0', portOrigin=49863, portDest=0, filePath='C:\temp\javachat\icons8-corazón-50.png', fileSize=0, timestamp=1759938562600}
+2025-10-08 17:49:22,601 INFO  [Thread-24] dcc.DccManager - 📤 Procesando solicitud DCC | Archivo='C:\temp\javachat\icons8-corazón-50.png' | Destinatario='akkiles43211'
+2025-10-08 17:49:22,602 DEBUG [Thread-24] dcc.DccManager - 🔧 sendFile() invocado | receiver='User(super=UserHostmask(extbanPrefix=null, nick=akkiles43211, login=akkiles4321, hostname=i-g52.ba7.9qik5o.IP), userId=38cb7d88-45f1-451e-b8b7-a75296d814c5, realName=, awayMessage=null, ircop=false, server=, hops=0)' | file='C:\temp\javachat\icons8-corazón-50.png' | passive=false
+2025-10-08 17:49:22,602 DEBUG [Thread-25] dcc.DccManager - 📤 Iniciando preparación de envío DCC...
+2025-10-08 17:53:45,235 ERROR [Thread-21] dcc.DccManager - 💥 Error en sendFile: Accept timed out
+java.net.SocketTimeoutException: Accept timed out
+	at java.base/sun.nio.ch.NioSocketImpl.timedAccept(NioSocketImpl.java:695)
+	at java.base/sun.nio.ch.NioSocketImpl.accept(NioSocketImpl.java:739)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:593)
+	at java.base/java.net.ServerSocket.platformImplAccept(ServerSocket.java:560)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:536)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:482)
+	at java.base/java.net.ServerSocket.accept(ServerSocket.java:441)
+	at org.pircbotx.dcc.DccHandler.sendFile(DccHandler.java:404)
+	at dcc.DccManager.lambda$0(DccManager.java:76)
+	at java.base/java.lang.Thread.run(Thread.java:1447)
+2025-10-08 17:54:05,373 ERROR [Thread-23] dcc.DccManager - 💥 Error en sendFile: Accept timed out
+java.net.SocketTimeoutException: Accept timed out
+	at java.base/sun.nio.ch.NioSocketImpl.timedAccept(NioSocketImpl.java:695)
+	at java.base/sun.nio.ch.NioSocketImpl.accept(NioSocketImpl.java:739)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:593)
+	at java.base/java.net.ServerSocket.platformImplAccept(ServerSocket.java:560)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:536)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:482)
+	at java.base/java.net.ServerSocket.accept(ServerSocket.java:441)
+	at org.pircbotx.dcc.DccHandler.sendFile(DccHandler.java:404)
+	at dcc.DccManager.lambda$0(DccManager.java:76)
+	at java.base/java.lang.Thread.run(Thread.java:1447)
+2025-10-08 17:54:22,606 ERROR [Thread-25] dcc.DccManager - 💥 Error en sendFile: Accept timed out
+java.net.SocketTimeoutException: Accept timed out
+	at java.base/sun.nio.ch.NioSocketImpl.timedAccept(NioSocketImpl.java:695)
+	at java.base/sun.nio.ch.NioSocketImpl.accept(NioSocketImpl.java:739)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:593)
+	at java.base/java.net.ServerSocket.platformImplAccept(ServerSocket.java:560)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:536)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:482)
+	at java.base/java.net.ServerSocket.accept(ServerSocket.java:441)
+	at org.pircbotx.dcc.DccHandler.sendFile(DccHandler.java:404)
+	at dcc.DccManager.lambda$0(DccManager.java:76)
+	at java.base/java.lang.Thread.run(Thread.java:1447)
+2025-10-08 19:29:02,035 INFO  [Thread-3] dcc.DccManager - 🛰️ DccManager inicializado con interfaz para bot 'akkiles4321'
+2025-10-08 19:30:01,215 INFO  [Thread-3] dcc.DccManager - 🛰️ DccManager inicializado con interfaz para bot 'akkiles4321'
+2025-10-08 19:32:16,094 DEBUG [JavaFX Application Thread] dcc.DccManager - 🧾 requestFileTransfer() | request=DccTransferRequest{type='TRANSFER_REQUEST', sender='akkiles4321', receiver='akkiles43211', ipOrigin='192.168.1.10', ipDest='0.0.0.0', portOrigin=59488, portDest=0, filePath='C:\temp\javachat\icons8-corazón-50.png', fileSize=0, timestamp=1759944736093}
+2025-10-08 19:32:16,099 INFO  [Thread-6] dcc.DccManager - 📤 Procesando solicitud DCC | Archivo='C:\temp\javachat\icons8-corazón-50.png' | Destinatario='akkiles43211'
+2025-10-08 19:32:16,100 DEBUG [Thread-6] dcc.DccManager - 🔧 sendFile() invocado | receiver='User(super=UserHostmask(extbanPrefix=null, nick=akkiles43211, login=akkiles4321, hostname=i-g52.ba7.9qik5o.IP), userId=03ace6e0-f5bd-448c-b1e8-db68491dd8f8, realName=, awayMessage=null, ircop=false, server=, hops=0)' | file='C:\temp\javachat\icons8-corazón-50.png' | passive=false
+2025-10-08 19:32:16,102 DEBUG [Thread-7] dcc.DccManager - 📤 Iniciando preparación de envío DCC...
+2025-10-08 19:37:16,117 ERROR [Thread-7] dcc.DccManager - 💥 Error en sendFile: Accept timed out
+java.net.SocketTimeoutException: Accept timed out
+	at java.base/sun.nio.ch.NioSocketImpl.timedAccept(NioSocketImpl.java:695)
+	at java.base/sun.nio.ch.NioSocketImpl.accept(NioSocketImpl.java:739)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:593)
+	at java.base/java.net.ServerSocket.platformImplAccept(ServerSocket.java:560)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:536)
+	at java.base/java.net.ServerSocket.implAccept(ServerSocket.java:482)
+	at java.base/java.net.ServerSocket.accept(ServerSocket.java:441)
+	at org.pircbotx.dcc.DccHandler.sendFile(DccHandler.java:404)
+	at dcc.DccManager.lambda$0(DccManager.java:76)
+	at java.base/java.lang.Thread.run(Thread.java:1447)

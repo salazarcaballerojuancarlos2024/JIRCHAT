@@ -6,10 +6,7 @@ import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
-import javafx.scene.control.Button;
-import javafx.scene.control.ListView;
-import javafx.scene.control.ScrollPane;
-import javafx.scene.control.TextField;
+import javafx.scene.control.*;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.AnchorPane;
@@ -17,42 +14,61 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
-import javafx.scene.text.Font;
-import javafx.scene.text.FontWeight;
-import javafx.scene.text.Text;
-import javafx.scene.control.TextArea;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 import javafx.util.Duration;
-import org.pircbotx.*;
-import org.pircbotx.hooks.ListenerAdapter;
-import org.pircbotx.hooks.events.*;
-import org.pircbotx.hooks.types.GenericMessageEvent;
-import javax.net.ssl.SSLSocketFactory;
-import java.io.IOException;
-import java.util.*;
-import java.util.stream.Collectors;
-import Cliente_DCC.DCCManager;
 
+// ⭐ IMPORTS DE PIRCBOT 1.5.0
+// ELIMINADO: import org.jibble.pircbot.DccFileTransfer; // Ya no es necesario
+import org.jibble.pircbot.PircBot;
+// ELIMINADO: import org.jibble.pircbot.User; // No es estrictamente necesario aquí
+import irc.CanalVentana;
+import irc.ChatBot; 
+// ELIMINADO: import dcc.TransferManager; 
+
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.InetAddress;
+import java.net.URL;
+import java.net.UnknownHostException;
+
+import java.util.*;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+
+// ⭐ YA NO EXTIENDE NINGUNA CLASE DE EVENTOS DE IRC
 public class ChatController {
 
     @FXML private TextField inputField;
     @FXML private ListView<String> userListView_canal;
     @FXML private ScrollPane chatScroll;
     @FXML private TextArea  chatFlow;
-    
     @FXML private TextArea chatArea;
+    
+    // Configuraciones
+    // ELIMINADO: private static final int START_PORT = 40000;
+    // ELIMINADO: private static final int END_PORT = 41000;
+    private static final String NICKNAME = "akkiles4321";
+    private static final String SERVER = "irc.chatzona.org";
+    private static final int PORT = 6667; 
 
-
+    // Paneles
     private StackPane rightPane;
     private VBox leftPane;
     private AnchorPane rootPane;
 
-    private PircBotX bot;
+    // ⭐ REEMPLAZO: Usamos nuestra clase ChatBot (que extiende PircBot 1.5.0)
+    private ChatBot bot; 
     private String canalActivo = null;
 
-    private final Map<String, CanalVentana> canalesAbiertos = new HashMap<>();
+    public final Map<String, CanalVentana> canalesAbiertos = new HashMap<>();
     private final Map<String, Button> canalButtons = new HashMap<>();
     private final List<Stage> floatingWindows = new ArrayList<>();
 
@@ -64,25 +80,33 @@ public class ChatController {
     private Stage lastFocusedWindow = null;
 
     private String password;
+    // ELIMINADO: private TransferManager transferManager; // Ya no es necesario
+    private boolean isConnected = false;
     
- // Declaramos el campo
-    private ChatController chatController;
+    private static final Logger log = LoggerFactory.getLogger(ChatController.class); 
 
     // Solicitudes de chat pendientes o aceptadas
     private final Map<String, Boolean> solicitudPendiente = new HashMap<>();
 
-    private static class CanalVentana {
-        Stage stage;
-        CanalController controller;
-        AnchorPane rootPane;
-        CanalVentana(Stage s, CanalController c, AnchorPane p) { stage = s; controller = c; rootPane = p; }
-    }
+    // --- Getters & Setters ---
+    public void setBot(ChatBot bot) { this.bot = bot; }
+    public ChatBot getBot() { return bot; } 
 
     public void setPassword(String password) { this.password = password; }
     public void setLeftPane(VBox leftPane) { this.leftPane = leftPane; }
     public void setRightPane(StackPane rightPane) { this.rightPane = rightPane; attachRightPaneSizeListeners(); }
     public void setRootPane(AnchorPane rootPane) { this.rootPane = rootPane; }
-    public void setBot(PircBotX bot) { this.bot = bot; }
+    
+    public Pane getRootPane() { return rootPane; }
+    public String getPassword() { return password; }
+    public TextField getInputField() { return inputField; }
+    public Map<String, CanalVentana> getCanalesAbiertos() { return canalesAbiertos; }
+    public Map<String, PrivadoController> getPrivateChatsController() { return privateChatsController; }
+    // ELIMINADO: public DccManager getDccManager() { return dccManager; } // Ya no es necesario
+    public void setConnected(boolean connected) { this.isConnected = connected; }
+    
+    // ELIMINADO: public void setTransferManager(TransferManager transferManager) { ... } // Ya no es necesario
+
 
     @FXML
     public void initialize() {
@@ -111,7 +135,8 @@ public class ChatController {
                     CanalVentana ventana = canalesAbiertos.get(canalActivo);
                     ventana.controller.sendMessageToChannel(text);
                 } else {
-                    bot.sendIRC().message("NickServ", text);
+                    // ⭐ ADAPTACIÓN: PircBot 1.5.0 usa sendMessage
+                    bot.sendMessage("NickServ", text);
                     appendSystemMessage("[Yo -> NickServ] " + text);
                 }
             }
@@ -119,18 +144,12 @@ public class ChatController {
             inputField.clear();
         }
     }
-
-    
-    public Pane getRootPane() {
-        return rootPane;
-    }
-
     
     private void handleCommand(String cmd) {
         try {
             if (cmd.startsWith("join ")) abrirCanal(cmd.substring(5).trim());
             else if (cmd.startsWith("quit")) cerrarTodo("Cerrando cliente");
-            else if (bot != null) bot.sendRaw().rawLine(cmd);
+            else if (bot != null) bot.sendRawLine(cmd); // ⭐ ADAPTACIÓN: PircBot 1.5.0 usa sendRawLine
         } catch (Exception e) { appendSystemMessage("⚠ Error al ejecutar comando: " + e.getMessage()); }
     }
 
@@ -143,7 +162,6 @@ public class ChatController {
         abrirPrivado(nick); // abre directamente
     }
 
-
     public void abrirChatPrivadoConMensaje(String nick, String mensaje) {
         if (privateChats.containsKey(nick)) {
             privateChats.get(nick).toFront();
@@ -152,7 +170,6 @@ public class ChatController {
         }
         mostrarSolicitudPrivado(nick, mensaje);
     }
-
 
     private void mostrarSolicitudPrivado(String nick, String mensaje) {
         if (Boolean.TRUE.equals(solicitudPendiente.get(nick))) {
@@ -191,7 +208,7 @@ public class ChatController {
         rechazarBtn.setOnAction(e -> {
             solicitudStage.close();
             solicitudPendiente.remove(nick);
-            if (bot != null) bot.sendIRC().message(nick, "⚠ Su solicitud de chat privado ha sido denegada.");
+            if (bot != null) bot.sendMessage(nick, "⚠ Su solicitud de chat privado ha sido denegada."); 
         });
     }
 
@@ -205,17 +222,23 @@ public class ChatController {
             FXMLLoader loader = new FXMLLoader(getClass().getResource("JIRCHAT_PRIVADO.fxml"));
             Parent root = loader.load();
             PrivadoController controller = loader.getController();
+
+            // --- INYECCIÓN DE DEPENDENCIAS ---
             controller.setBot(bot);
             controller.setDestinatario(nick);
             controller.setMainController(this);
+            // ELIMINADO: if (dccManager != null) { controller.setDccManager(dccManager); } 
 
+            // Crear Stage
             Stage stage = new Stage();
             stage.setTitle("Privado con " + nick);
             stage.setScene(new Scene(root));
 
+            // Guardar referencias
             privateChats.put(nick, stage);
             privateChatsController.put(nick, controller);
 
+            // Botón para el leftPane
             Button btn = new Button("@" + nick);
             btn.setMaxWidth(Double.MAX_VALUE);
             btn.setOnAction(e -> stage.toFront());
@@ -223,6 +246,7 @@ public class ChatController {
 
             if (leftPane != null) leftPane.getChildren().add(btn);
 
+            // Registrar ventana flotante
             registerFloatingWindow(stage, () -> cerrarPrivado(nick));
             stage.setOnCloseRequest(ev -> cerrarPrivado(nick));
 
@@ -232,23 +256,30 @@ public class ChatController {
         }
     }
 
+
     public void cerrarPrivado(String nick) {
+        // Cerrar ventana y limpiar referencias
         Stage stage = privateChats.remove(nick);
         if (stage != null) stage.close();
 
         privateChatsController.remove(nick);
+
         Button btn = privadoButtons.remove(nick);
         if (btn != null && leftPane != null) leftPane.getChildren().remove(btn);
+
         solicitudPendiente.remove(nick);
     }
 
+
     public void appendPrivateMessage(String nick, String mensaje, boolean esMio) {
+        if (esMio) return;  // Ignorar mensajes propios
+
         PrivadoController controller = privateChatsController.get(nick);
-        if (controller != null) controller.appendMessage(esMio ? "Yo" : nick, mensaje);
+        if (controller != null) controller.appendMessage(nick, mensaje);
     }
 
     // ------------------ MENSAJES CON COLORES ------------------
- // Mensaje normal de usuario
+    // Mensaje normal de usuario
     public void appendMessage(String usuario, String mensaje) {
         Platform.runLater(() -> {
             if (chatArea != null) {
@@ -328,192 +359,120 @@ public class ChatController {
     }
 
     
+    // ------------------ CONEXIÓN IRC ------------------
+
+ // 📄 java_irc_chat_client/ChatController.java
+
     public void connectToIRC() {
+        if (isConnected) {
+            appendSystemMessage("ℹ️ Ya estás conectado al servidor");
+            return;
+        }
+
         new Thread(() -> {
             try {
-                Configuration config = new Configuration.Builder()
-                        .setName("akkiles4321") // tu nick
-                        .setLogin("akkiles4321")
-                        .setRealName("JIRCHAT")
-                        .addServer("irc.chatzona.org", 6697)
-                        .setSocketFactory(SSLSocketFactory.getDefault())
-                        .setAutoNickChange(true)
-                        .setAutoReconnect(true)
-                        .addListener(new ListenerAdapter() {
+                appendSystemMessage("🔹 Paso 1: Iniciando conexión al servidor IRC...");
 
-                            @Override
-                            public void onGenericMessage(GenericMessageEvent event) {
-                                appendSystemMessage("[Servidor] " + event.getMessage());
-                            }
+                // 1. INICIALIZAR BOT
+                // El constructor de ChatBot ahora maneja setLogin, setFinger/setRealName, etc.
+                ChatBot newBot = new ChatBot(this, NICKNAME);
 
-                            @Override
-                            public void onConnect(ConnectEvent event) {
-                                Platform.runLater(() -> inputField.setDisable(false));
-                                appendSystemMessage("✅ Conectado a irc.chatzona.org");
+                // 2. CONFIGURACIÓN DEL BOT (API de PircBot 1.5.0)
+                // ❌ ELIMINAR ESTAS LÍNEAS. YA ESTÁN EN EL CONSTRUCTOR DE ChatBot.
+                // newBot.setLogin(NICKNAME);
+                // newBot.setRealName("JIRCHAT"); 
+                // newBot.setAutoNickChange(true);
+                
+                // ⭐ CRÍTICO: CONFIGURACIÓN DCC ELIMINADA (Ya hecho)
+                
+                // 3. ASIGNAR BOT A LA CLASE
+                bot = newBot; 
+                setBot(bot); 
+                
+                appendSystemMessage("🔹 Paso 2: Listeners configurados - conectando...");
+                appendSystemMessage("🔹 Conectando a " + SERVER + ":" + PORT + "...");
 
-                                // IDENTIFY a NickServ si hay password
-                                if (password != null && !password.isEmpty())
-                                    bot.sendIRC().message("NickServ", "IDENTIFY " + password);
+                // 4. CONECTAR (API de PircBot 1.5.0)
+                bot.connect(SERVER, PORT); 
+                isConnected = true; 
 
-                                // Validación anti-bot: JOIN/PART temporal
-                                new Thread(() -> {
-                                    try {
-                                        String validationChannel = "#validationTrigger";
-                                        bot.sendRaw().rawLineNow("JOIN " + validationChannel);
-                                        bot.sendRaw().rawLineNow("PART " + validationChannel);
-                                    } catch (Exception e) {
-                                        appendSystemMessage("⚠ Error en validación anti-bot: " + e.getMessage());
-                                    }
-                                }).start();
-                            }
-
-                            @Override
-                            public void onMessage(MessageEvent event) {
-                                CanalVentana ventana = canalesAbiertos.get(event.getChannel().getName());
-                                if (ventana != null)
-                                    ventana.controller.appendMessage(event.getUser().getNick(), event.getMessage());
-                            }
-
-                            @Override
-                            public void onPrivateMessage(PrivateMessageEvent event) {
-                                String nick = event.getUser().getNick();
-                                String mensaje = event.getMessage();
-
-                                // DCC SEND
-                                if (mensaje.startsWith("/DCC SEND ")) {
-                                    String[] parts = mensaje.split(" ", 4);
-                                    String fileName = parts[2];
-                                    long fileSize = Long.parseLong(parts[3]);
-
-                                    Platform.runLater(() -> {
-                                        // Solicitud de aceptación
-                                        boolean accepted = showFileAcceptanceDialog(nick, fileName, fileSize);
-                                        if (accepted) {
-                                            bot.sendIRC().message(nick, "/DCC ACCEPT " + fileName);
-                                            DCCManager.receiveFile(nick, fileName); // Aquí inicias la recepción
-                                        } else {
-                                            bot.sendIRC().message(nick, "/DCC REJECT " + fileName);
-                                        }
-                                    });
-                                    return;
-                                }
-
-                                // DCC ACCEPT / REJECT
-                                if (mensaje.startsWith("/DCC ACCEPT ")) {
-                                    String fileName = mensaje.split(" ")[2];
-                                    DCCManager.startSendingFile(nick, fileName); // Método que envía bytes
-                                    return;
-                                }
-                                if (mensaje.startsWith("/DCC REJECT ")) {
-                                    String fileName = mensaje.split(" ")[2];
-                                    appendSystemMessage("⚠ El usuario " + nick + " rechazó la transferencia de " + fileName);
-                                    return;
-                                }
-
-                                Platform.runLater(() -> onPrivateMessageRemoto(nick, mensaje));
-                            }
-
-
-
-                            @Override
-                            public void onUserList(UserListEvent event) {
-                                actualizarUsuariosCanal(event.getChannel().getName(),
-                                        reconstruirListaConPrefijos(event.getChannel()));
-                            }
-
-                            @Override
-                            public void onJoin(JoinEvent event) {
-                                actualizarUsuariosCanal(event.getChannel().getName(),
-                                        reconstruirListaConPrefijos(event.getChannel()));
-                                CanalVentana ventana = canalesAbiertos.get(event.getChannel().getName());
-                                if (ventana != null)
-                                    ventana.controller.appendSystemMessage(
-                                            event.getUser().getNick() + " ha entrado al canal",
-                                            CanalController.MessageType.JOIN,
-                                            event.getUser().getNick()
-                                    );
-                            }
-
-                            @Override
-                            public void onPart(PartEvent event) {
-                                String canal = event.getChannel().getName();
-                                actualizarUsuariosCanal(canal, reconstruirListaConPrefijos(event.getChannel()));
-                                CanalVentana ventana = canalesAbiertos.get(canal);
-                                if (ventana != null) {
-                                    ventana.controller.appendSystemMessage(
-                                            event.getUser().getNick() + " ha salido del canal",
-                                            CanalController.MessageType.PART,
-                                            event.getUser().getNick()
-                                    );
-                                    ventana.controller.showExitPopup(event.getUser().getNick(), canal);
-                                }
-                            }
-
-                            @Override
-                            public void onQuit(QuitEvent event) {
-                                String usuario = event.getUser().getNick();
-                                for (Map.Entry<String, CanalVentana> entry : canalesAbiertos.entrySet()) {
-                                    Channel canal = entry.getValue().controller.getCanalChannel();
-                                    if (canal != null && canal.getUsers().contains(event.getUser())) {
-                                        entry.getValue().controller.updateUsers(reconstruirListaConPrefijos(canal));
-                                        entry.getValue().controller.appendSystemMessage(
-                                                usuario + " ha salido del canal",
-                                                CanalController.MessageType.PART,
-                                                usuario
-                                        );
-                                        entry.getValue().controller.showExitPopup(usuario, entry.getKey());
-                                    }
-                                }
-                            }
-
-                            private List<String> reconstruirListaConPrefijos(Channel channel) {
-                                return channel.getUsers().stream().map(u -> {
-                                    String prefix = "";
-                                    if (channel.getOps().contains(u)) prefix = "@";
-                                    else if (channel.getVoices().contains(u)) prefix = "+";
-                                    return prefix + u.getNick();
-                                }).collect(Collectors.toList());
-                            }
-
-                        }).buildConfiguration();
-
-                bot = new PircBotX(config);
-                bot.startBot();
             } catch (Exception e) {
-                appendSystemMessage("⚠ Error al conectar: " + e.getMessage());
+                e.printStackTrace(); 
+                // ... (manejo de errores)
             }
         }).start();
     }
+    
 
     
- // ------------------ CANALES ------------------
+   // ------------------ UTILIDAD DE RED (Simplificado) ------------------
+    
+    // ⭐ ELIMINADO: Ya no necesitamos la IP pública para DCC, solo la local como fallback
+    private InetAddress getPublicIPAddress() {
+        try {
+            return InetAddress.getLocalHost();
+        } catch (UnknownHostException e) {
+            log.error("❌ Fallback fallido: No se pudo obtener ni la IP local.", e);
+            return null; 
+        }
+    }
+
+
+    private void handleConnectionError(Exception e) {
+        String errorMsg = e.getMessage().toLowerCase();
+        
+        if (errorMsg.contains("connection refused") || errorMsg.contains("connect timed out")) {
+            appendSystemMessage("💡 El servidor no está disponible o rechazó la conexión.");
+            appendSystemMessage("💡 Verifica que '" + SERVER + "' esté online.");
+        } else if (errorMsg.contains("unknownhost")) {
+            appendSystemMessage("💡 Servidor no encontrado: '" + SERVER + "'");
+            appendSystemMessage("💡 Verifica el nombre del servidor o tu conexión a Internet.");
+        } else if (errorMsg.contains("ssl") || errorMsg.contains("handshake")) {
+            appendSystemMessage("💡 Error SSL. Prueba estas opciones:");
+            appendSystemMessage("💡 1. Usar puerto 6667 (sin SSL)");
+            appendSystemMessage("💡 2. Verificar certificados del servidor");
+        } else if (errorMsg.contains("timeout")) {
+            appendSystemMessage("💡 Timeout de conexión. El servidor no respondió.");
+            appendSystemMessage("💡 Puede estar caído o sobrecargado.");
+        } else {
+            appendSystemMessage("💡 Error desconocido. Revisa los logs para más detalles.");
+        }
+        
+        appendSystemMessage("🔍 Servidores alternativos para probar:");
+        appendSystemMessage("   - irc.libera.chat:6697 (SSL)");
+        appendSystemMessage("   - irc.efnet.org:6667 (sin SSL)");
+    }
+
+    // ------------------ CANALES ------------------
+    
     public void abrirCanal(String canal) throws IOException {
-        if (canalesAbiertos.containsKey(canal)) {
-            canalesAbiertos.get(canal).stage.toFront();
-            canalActivo = canal;
+        String canalNombre = canal; 
+        
+        if (canalesAbiertos.containsKey(canalNombre)) {
+            canalesAbiertos.get(canalNombre).stage.toFront();
+            canalActivo = canalNombre;
             return;
         }
 
         FXMLLoader loader = new FXMLLoader(getClass().getResource("JIRCHAT_CANAL.fxml"));
         Parent rootStack = loader.load();
         CanalController canalController = loader.getController();
-        canalController.setBot(bot);
-        canalController.setCanal(canal);
+        canalController.setBot(bot); 
+        canalController.setCanal(canalNombre);
         canalController.setMainController(this);
 
         AnchorPane canalPane = (AnchorPane) rootStack.lookup("#rootPane");
 
         Stage canalStage = new Stage();
-        canalStage.setTitle("Canal " + canal);
+        canalStage.setTitle("Canal " + canalNombre);
         canalStage.setScene(new Scene(rootStack));
 
         CanalVentana ventana = new CanalVentana(canalStage, canalController, canalPane);
-        canalesAbiertos.put(canal, ventana);
+        canalesAbiertos.put(canalNombre, ventana);
 
-        final String canalNombre = canal;   // 👈 lo hacemos final
         Button canalBtn = new Button(canalNombre);
         canalBtn.setMaxWidth(Double.MAX_VALUE);
-        canalBtn.setOnAction(evt -> {       // 👈 renombramos el parámetro
+        canalBtn.setOnAction(evt -> {
             canalStage.toFront();
             canalActivo = canalNombre;
         });
@@ -530,12 +489,9 @@ public class ChatController {
         canalStage.show();
 
         if (bot != null) {
-            bot.sendIRC().joinChannel(canalNombre);
-            bot.sendRaw().rawLineNow("NAMES " + canalNombre);
+            bot.joinChannel(canalNombre); 
         }
     }
-
-
 
     public void cerrarCanalDesdeVentana(String canal) {
         CanalVentana ventana = canalesAbiertos.remove(canal);
@@ -550,7 +506,7 @@ public class ChatController {
         if (ventana != null) ventana.controller.updateUsers(usuarios);
     }
 
-    // ------------------ Ventanas flotantes ------------------
+    // ------------------ Ventanas flotantes (Sin cambios) ------------------
     private void attachRightPaneSizeListeners() {
         if (rightPane == null) return;
         rightPane.widthProperty().addListener((obs, oldV, newV) -> repositionFloatingWindows());
@@ -602,7 +558,7 @@ public class ChatController {
         repositionFloatingWindows();
     }
 
-    // ------------------ CERRAR TODO ------------------
+    // ------------------ CERRAR TODO (Sin cambios) ------------------
     public void cerrarTodo(String mensaje) {
         for (String canal : new ArrayList<>(canalesAbiertos.keySet()))
             cerrarCanalDesdeVentana(canal);
@@ -612,9 +568,9 @@ public class ChatController {
 
         if (bot != null) {
             try {
-                if (bot.isConnected())
-                    bot.sendIRC().quitServer(mensaje != null ? mensaje : "Cerrando cliente");
-                bot.stopBotReconnect();
+                if (bot.isConnected()) {
+                    bot.quitServer(mensaje != null ? mensaje : "Cerrando cliente");
+                }
             } catch (Exception ignored) {}
         }
 
@@ -622,56 +578,4 @@ public class ChatController {
     }
     
     
-    public void setChatController(ChatController chatController) {
-        this.chatController = chatController;
-    }
-
-    
-    
-    public PircBotX getBot() {
-        return bot;
-    }
-    
-    public boolean showFileAcceptanceDialog(String nick, String fileName, long fileSize) {
-        final boolean[] accepted = {false};
-
-        // Creamos el diálogo
-        Platform.runLater(() -> {
-            Stage stage = new Stage();
-            stage.setTitle("Aceptar archivo de " + nick);
-
-            VBox vbox = new VBox(10);
-            vbox.setStyle("-fx-padding: 10;");
-            javafx.scene.control.Label label = new javafx.scene.control.Label(
-                    nick + " quiere enviarte el archivo:\n" + fileName + " (" + fileSize + " bytes)"
-            );
-
-            javafx.scene.control.Button aceptar = new javafx.scene.control.Button("Aceptar");
-            javafx.scene.control.Button rechazar = new javafx.scene.control.Button("Rechazar");
-
-            aceptar.setOnAction(e -> {
-                accepted[0] = true;
-                stage.close();
-            });
-            rechazar.setOnAction(e -> {
-                accepted[0] = false;
-                stage.close();
-            });
-
-            vbox.getChildren().addAll(label, aceptar, rechazar);
-            stage.setScene(new Scene(vbox));
-            stage.initModality(Modality.APPLICATION_MODAL);
-            stage.showAndWait();
-        });
-
-        // Espera a que el usuario cierre el diálogo
-        while (Platform.isFxApplicationThread() && !Platform.isFxApplicationThread()) {
-            // Esperamos...
-        }
-
-        return accepted[0];
-    }
-
-    
-
 }

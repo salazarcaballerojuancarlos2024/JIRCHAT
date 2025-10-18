@@ -2,6 +2,9 @@ package java_irc_chat_client;
 
 import javafx.event.ActionEvent;
 import java.io.IOException;
+
+// ELIMINADO: import dcc.TransferManager; 
+import irc.ChatBot; 
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
@@ -16,15 +19,15 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 
 
-
-
 public class ToolBarController {
 
     private StackPane rightPane;
     private VBox leftPane;
     private ChatController chatController;
-    private AnchorPane statusPane;  // Pane del Status
-    private AnchorPane currentFrontPane;  // Pane en primer plano
+    private AnchorPane statusPane;
+    private AnchorPane currentFrontPane;
+    
+    // ELIMINADO: private TransferManager transferManager; // Ya no es necesario
 
     public void setRightPane(StackPane rightPane) { this.rightPane = rightPane; }
     public void setLeftPane(VBox leftPane) { this.leftPane = leftPane; }
@@ -36,6 +39,8 @@ public class ToolBarController {
     
     @FXML
     private Button btnConnect;
+
+    // ELIMINADO: public void setTransferManager(TransferManager transferManager) { ... } // Ya no es necesario
 
     
     @FXML
@@ -51,7 +56,6 @@ public class ToolBarController {
             stage.setScene(new Scene(root));
             stage.setResizable(false);
 
-            // Configurar listener de cierre para guardar todas las configuraciones automáticamente
             setupController.setStage(stage);
 
             stage.show();
@@ -59,9 +63,6 @@ public class ToolBarController {
             e.printStackTrace();
         }
     }
-
-
-
 
 
     
@@ -75,8 +76,8 @@ public class ToolBarController {
             Stage stage = new Stage();
             stage.setTitle("Logs");
             stage.setScene(new Scene(root));
-            stage.setResizable(false); // no maximizar ni minimizar
-            stage.initModality(Modality.NONE); // ventana independiente
+            stage.setResizable(false); 
+            stage.initModality(Modality.NONE); 
             stage.show();
 
         } catch (IOException e) {
@@ -133,20 +134,20 @@ public class ToolBarController {
             ConexionController controller = loader.getController();
 
             // Cargar los datos directamente desde el fichero físico
-            controller.cargarFormulario(); // ahora es público
+            controller.cargarFormulario(); 
 
             // Crear la nueva ventana
             Stage stage = new Stage();
             stage.setTitle("Conexión IRC");
             stage.setScene(new Scene(root));
             stage.setResizable(true);
-            stage.initOwner(btnConnect.getScene().getWindow()); // ventana padre
+            stage.initOwner(btnConnect.getScene().getWindow()); 
             stage.initModality(Modality.NONE);
 
             // Registrar el guardado al cerrar la ventana
             stage.setOnCloseRequest(e -> {
                 try {
-                    controller.guardarFormulario(); // guarda en el fichero físico
+                    controller.guardarFormulario(); 
                 } catch (Exception ex) {
                     ex.printStackTrace();
                     Alert alert = new Alert(Alert.AlertType.ERROR,
@@ -188,15 +189,17 @@ public class ToolBarController {
             chatController.setLeftPane(leftPane);
             chatController.setRightPane(rightPane);
 
+            // --- INICIALIZACIÓN DE DCC ELIMINADA ---
+            // Ya no es necesario crear ni inyectar TransferManager.
+
             // Añadir al rightPane
             rightPane.getChildren().add(chatPane);
 
             // Guardar statusPane y ponerlo en primer plano
             statusPane = (AnchorPane) chatController.getRootPane();
-
             currentFrontPane = statusPane;
 
-            // Conectar al IRC
+            // Conectar al IRC (Aquí se crea el bot)
             chatController.connectToIRC();
 
             // Crear botón Status en el leftPane
@@ -216,6 +219,7 @@ public class ToolBarController {
             e.printStackTrace();
         }
     }
+
 
     /**
      * Muestra el panel de estado en primer plano.
@@ -238,8 +242,17 @@ public class ToolBarController {
             Parent root = loader.load();
 
             CanalesListController controller = loader.getController();
-            controller.setBot(chatController.getBot());
-            controller.setChatController(chatController); // ✅ Inyectamos chatController
+            
+            ChatBot bot = chatController.getBot();
+            if (bot != null) {
+                // Ya se asume que CanalesListController.setBot() acepta ChatBot.
+                controller.setBot(bot); 
+            } else {
+                 chatController.appendSystemMessage("⚠ No hay conexión IRC activa.");
+                 return; 
+            }
+            
+            controller.setChatController(chatController); 
 
             Stage stage = new Stage();
             stage.setTitle("Listado de Canales");
@@ -248,12 +261,11 @@ public class ToolBarController {
 
         } catch (Exception e) {
             e.printStackTrace();
-            chatController.appendSystemMessage("⚠ Error al abrir ventana de listado de canales: " + e.getMessage());
+            if (chatController != null) {
+                chatController.appendSystemMessage("⚠ Error al abrir ventana de listado de canales: " + e.getMessage());
+            } else {
+                System.err.println("Error: chatController es nulo al intentar abrir lista de canales.");
+            }
         }
     }
-
-
 }
-
-
-
