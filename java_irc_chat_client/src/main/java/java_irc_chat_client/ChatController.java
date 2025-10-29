@@ -2,11 +2,14 @@ package java_irc_chat_client;
 
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
+import javafx.scene.control.Alert.AlertType;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.AnchorPane;
@@ -14,11 +17,13 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.stage.FileChooser;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 import javafx.util.Duration;
 
+import org.jibble.pircbot.DccFileTransfer;
 // ⭐ IMPORTS DE PIRCBOT 1.5.0
 // ELIMINADO: import org.jibble.pircbot.DccFileTransfer; // Ya no es necesario
 import org.jibble.pircbot.PircBot;
@@ -55,8 +60,9 @@ public class ChatController {
     // Configuraciones
     // ELIMINADO: private static final int START_PORT = 40000;
     // ELIMINADO: private static final int END_PORT = 41000;
-    private static final String NICKNAME = "akkiles4321";
-    private static final String SERVER = "irc.chatzona.org";
+    //private static final String NICKNAME = "akkiles4321";
+    private static final String NICKNAME = "Sakkiles4321";
+    private static final String SERVER = "irc.example.org";
     private static final int PORT = 6667; 
 
     // Paneles
@@ -105,9 +111,94 @@ public class ChatController {
     // ELIMINADO: public DccManager getDccManager() { return dccManager; } // Ya no es necesario
     public void setConnected(boolean connected) { this.isConnected = connected; }
     
-    // ELIMINADO: public void setTransferManager(TransferManager transferManager) { ... } // Ya no es necesario
+    private final ObservableList<String> canalesUnidos = FXCollections.observableArrayList();
+    private CanalesListController canalesListController;
 
+ // En tu ChatController (o MainController)
+    
+    public void setCanalesListController(CanalesListController controller) {
+        this.canalesListController = controller;
+        
+        // Opcional: Asegúrate de que el CanalesListController también tenga una referencia al bot o al MainController si lo necesita
+        // if (bot != null) controller.setBot(bot); 
+    }
 
+    public void agregarCanalAbierto(String channelName) throws IOException {
+        // 1. Evitar duplicados en la lista de canales unidos (ListView/TabPane de la GUI principal)
+        if (!canalesUnidos.contains(channelName)) {
+            canalesUnidos.add(channelName);
+        }
+
+        // 2. Comprobar si la ventana del canal ya está abierta
+        if (canalesAbiertos.containsKey(channelName)) {
+            CanalVentana existente = canalesAbiertos.get(channelName);
+            if (existente != null && existente.stage != null) {
+                existente.stage.toFront();
+            }
+            return;
+        }
+
+        // 3. Crear y cargar la nueva ventana (Stage) del canal
+        try {
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("/java_irc_chat_client/JIRCHAT_CANAL.fxml"));
+            Parent root = loader.load();
+            
+            CanalController canalController = loader.getController();
+
+            // 4. Configurar el controlador y la lógica de negocio
+            canalController.setCanal(channelName);
+            canalController.setBot(this.bot); 
+            canalController.setMainController(this);
+
+            // ⭐ PASO CLAVE 1: REGISTRAR EL DELEGADO DE NOMBRES
+            // El bot ahora sabrá a qué controlador CanalController enviar las respuestas 353/366.
+            if (this.bot != null) {
+                this.bot.registerNamesDelegate(channelName, canalController); 
+            }
+            
+            // 5. Crear la ventana (Stage)
+            Stage stage = new Stage();
+            stage.setTitle(channelName + " - " + bot.getName());
+            stage.setScene(new Scene(root));
+
+            // 6. Almacenar la ventana y el controlador en el mapa
+            CanalVentana nuevoWrapper = new CanalVentana(stage, canalController);
+            canalesAbiertos.put(channelName.toLowerCase(), nuevoWrapper);
+            
+            // ⭐ PASO CLAVE 2: Desregistro al cerrar
+            stage.setOnCloseRequest(event -> {
+                if (this.bot != null) {
+                    // Elimina el delegado al cerrar la ventana
+                    this.bot.registerNamesDelegate(channelName, null); 
+                }
+                // Asumiendo que tienes un método para limpiar el canal de canalesAbiertos, etc.
+                cerrarCanalDesdeVentana(channelName); 
+            });
+            
+            // 7. Mostrar la ventana y solicitar la lista de usuarios
+            stage.show();
+
+            // ⭐ PASO CLAVE 3: LÓGICA CONDICIONAL JOIN/NAMES
+            if (this.bot != null) {
+                if (this.bot.isJoined(channelName)) {
+                    // Si ya estamos unidos (ej. canales por defecto #chat, #test),
+                    // solo pedimos la lista de usuarios.
+                    this.bot.sendRawLine("NAMES " + channelName); 
+                } else {
+                    // Si no estamos unidos, nos unimos. La respuesta onJoin del bot
+                    // se encargará de enviar el NAMES.
+                    this.bot.joinChannel(channelName); 
+                }
+            }
+            
+        } catch (IOException e) {
+            System.err.println("Error al intentar abrir la ventana del canal " + channelName + ": " + e.getMessage());
+            e.printStackTrace();
+            // Propagar o manejar el error
+            throw e; // Volvemos a lanzar la IOException para el try/catch de la llamada
+        }
+    }
+    
     @FXML
     public void initialize() {
         if (inputField != null) {
@@ -121,6 +212,18 @@ public class ChatController {
         resizePause.setOnFinished(ev -> {
             if (lastFocusedWindow != null) Platform.runLater(() -> lastFocusedWindow.toFront());
         });
+    }
+    
+    public void forzarCanalUnidoEnLista(String channelName) {
+        if (canalesListController != null) {
+            
+            // Crear un objeto 'Canal' con datos mínimos para la TableView
+            // Nota: Asume que tienes un constructor Canal(String nombre, int usuarios, String modos, String descripcion)
+            Canal canalObj = new Canal(channelName, 0, "+nt", "Canal unido automáticamente.");
+            
+            // Llama al método en el controlador de la lista para añadirlo
+            canalesListController.añadirCanalForzado(canalObj); 
+        }
     }
 
     // ------------------ COMANDOS ------------------
@@ -147,7 +250,7 @@ public class ChatController {
     
     private void handleCommand(String cmd) {
         try {
-            if (cmd.startsWith("join ")) abrirCanal(cmd.substring(5).trim());
+            if (cmd.startsWith("join ")) agregarCanalAbierto(cmd.substring(5).trim());
             else if (cmd.startsWith("quit")) cerrarTodo("Cerrando cliente");
             else if (bot != null) bot.sendRawLine(cmd); // ⭐ ADAPTACIÓN: PircBot 1.5.0 usa sendRawLine
         } catch (Exception e) { appendSystemMessage("⚠ Error al ejecutar comando: " + e.getMessage()); }
@@ -332,6 +435,84 @@ public class ChatController {
 
         return plainText.toString();
     }
+    
+ // Clase ChatController.java (Método Regenerado)
+    public void handleIncomingDcc(String senderNick, DccFileTransfer transfer) {
+        // 1. Ejecutar la UI en el Hilo de JavaFX
+        Platform.runLater(() -> {
+            final String TARGET_DIR = "C:\\temp\\descargas"; // ⭐ RUTA DE GUARDADO FIJA
+            String fileName = transfer.getFile().getName();
+            long fileSize = transfer.getSize();
+
+            String sizeText = formatFileSize(fileSize);
+
+            appendSystemMessage(
+                "📬 Solicitud DCC de " + senderNick + ": " + fileName + " (" + sizeText + 
+                "). ¡Revisa el diálogo de aceptación!"
+            );
+
+            // Crear el diálogo de confirmación
+            Alert alert = new Alert(
+                AlertType.CONFIRMATION,
+                "¿Aceptar el archivo '" + fileName + "' (" + sizeText + ") de " + senderNick + 
+                "? Se guardará en " + TARGET_DIR,
+                ButtonType.YES,
+                ButtonType.NO
+            );
+            alert.setTitle("Transferencia DCC Entrante");
+            alert.setHeaderText("Transferencia de Archivo: " + fileName);
+
+            // ⭐ El showAndWait() sigue siendo el punto de bloqueo, ¡responde rápido!
+            Optional<ButtonType> result = alert.showAndWait();
+
+            if (result.isPresent() && result.get() == ButtonType.YES) {
+                
+                // 2. El usuario acepta: Iniciar la transferencia en un HILO DE RED
+                new Thread(() -> {
+                    try {
+                        // 2a. Asegurar que el directorio de destino exista
+                        File targetDirectory = new File(TARGET_DIR);
+                        if (!targetDirectory.exists()) {
+                            targetDirectory.mkdirs(); // Crea la carpeta si no existe
+                        }
+                        
+                        // 2b. Definir la ruta final del archivo
+                        File saveFile = new File(targetDirectory, fileName);
+                        
+                        // Mostrar mensaje de inicio (De vuelta al Hilo de JavaFX)
+                        Platform.runLater(() -> {
+                            appendSystemMessage("📥 Aceptando: Guardando " + fileName + " en: " + saveFile.getAbsolutePath());
+                        });
+                        
+                        // ⭐ LÍNEA CRÍTICA: Iniciar la conexión y la recepción de datos.
+                        transfer.receive(saveFile, false); 
+                        
+                    } catch (Exception e) {
+                        Platform.runLater(() -> {
+                            appendSystemMessage("❌ Error al iniciar la recepción del archivo: " + fileName);
+                        });
+                        transfer.close();
+                        log.error("Error en el thread de recepción DCC para {}: {}", fileName, e.getMessage(), e);
+                    }
+                }).start();
+            } else {
+                // 3. El usuario rechaza
+                appendSystemMessage("🚫 Solicitud DCC rechazada para el archivo: " + fileName);
+                transfer.close();
+            }
+        });
+    }
+
+    /**
+     * Método auxiliar para formatear el tamaño de bytes a KB/MB.
+     */
+    private String formatFileSize(long bytes) {
+        if (bytes < 1024) return bytes + " Bytes";
+        int unit = 1024;
+        String[] units = {"KB", "MB", "GB"};
+        int exp = (int) (Math.log(bytes) / Math.log(unit));
+        return String.format("%.2f %s", bytes / Math.pow(unit, exp), units[exp - 1]);
+    }
 
 
     private Color ircColorToFX(int code) {
@@ -391,6 +572,8 @@ public class ChatController {
                 
                 appendSystemMessage("🔹 Paso 2: Listeners configurados - conectando...");
                 appendSystemMessage("🔹 Conectando a " + SERVER + ":" + PORT + "...");
+                
+                
 
                 // 4. CONECTAR (API de PircBot 1.5.0)
                 bot.connect(SERVER, PORT); 
@@ -445,53 +628,7 @@ public class ChatController {
 
     // ------------------ CANALES ------------------
     
-    public void abrirCanal(String canal) throws IOException {
-        String canalNombre = canal; 
-        
-        if (canalesAbiertos.containsKey(canalNombre)) {
-            canalesAbiertos.get(canalNombre).stage.toFront();
-            canalActivo = canalNombre;
-            return;
-        }
-
-        FXMLLoader loader = new FXMLLoader(getClass().getResource("JIRCHAT_CANAL.fxml"));
-        Parent rootStack = loader.load();
-        CanalController canalController = loader.getController();
-        canalController.setBot(bot); 
-        canalController.setCanal(canalNombre);
-        canalController.setMainController(this);
-
-        AnchorPane canalPane = (AnchorPane) rootStack.lookup("#rootPane");
-
-        Stage canalStage = new Stage();
-        canalStage.setTitle("Canal " + canalNombre);
-        canalStage.setScene(new Scene(rootStack));
-
-        CanalVentana ventana = new CanalVentana(canalStage, canalController, canalPane);
-        canalesAbiertos.put(canalNombre, ventana);
-
-        Button canalBtn = new Button(canalNombre);
-        canalBtn.setMaxWidth(Double.MAX_VALUE);
-        canalBtn.setOnAction(evt -> {
-            canalStage.toFront();
-            canalActivo = canalNombre;
-        });
-
-        if (leftPane != null) {
-            Platform.runLater(() -> leftPane.getChildren().add(canalBtn));
-        }
-        canalButtons.put(canalNombre, canalBtn);
-
-        registerFloatingWindow(canalStage, () -> cerrarCanalDesdeVentana(canalNombre));
-        canalStage.setOnCloseRequest(ev -> cerrarCanalDesdeVentana(canalNombre));
-
-        canalActivo = canalNombre;
-        canalStage.show();
-
-        if (bot != null) {
-            bot.joinChannel(canalNombre); 
-        }
-    }
+    
 
     public void cerrarCanalDesdeVentana(String canal) {
         CanalVentana ventana = canalesAbiertos.remove(canal);

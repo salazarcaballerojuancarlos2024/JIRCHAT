@@ -2,7 +2,7 @@
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.ScrollPane?>
 <?import javafx.scene.control.TextField?>
-<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.control.ProgressBar?> <?import javafx.scene.layout.BorderPane?>
 <?import javafx.scene.layout.VBox?>
 
 <BorderPane xmlns="http://javafx.com/javafx/17" 
@@ -11,7 +11,6 @@
             prefWidth="600.0" prefHeight="400.0"
             fx:id="rootPane">
 
-    <!-- Zona central: mensajes privados -->
     <center>
         <ScrollPane fx:id="chatScrollPane" fitToWidth="true" fitToHeight="true">
             <content>
@@ -24,12 +23,16 @@
         </ScrollPane>
     </center>
 
-    <!-- Zona inferior: campo de texto para escribir -->
     <bottom>
         <VBox spacing="5">
             <padding>
                 <Insets top="10" right="10" bottom="10" left="10"/>
             </padding>
+            <ProgressBar fx:id="progressBarDcc" 
+                         prefWidth="600.0" 
+                         progress="0.0" 
+                         visible="false"/> 
+            
             <TextField fx:id="inputField_privado" promptText="Escribe un mensaje privado..."/>
         </VBox>
     </bottom>

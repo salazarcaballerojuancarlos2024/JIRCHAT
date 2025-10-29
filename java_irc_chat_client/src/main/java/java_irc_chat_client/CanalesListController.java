@@ -169,7 +169,7 @@ public class CanalesListController {
                     if (chatController != null && canal != null) {
                         Platform.runLater(() -> {
                             try {
-                                chatController.abrirCanal(canal.getNombre());
+                                chatController.agregarCanalAbierto(canal.getNombre());
                                 // Cierre de ventana opcional
                                 if (canalesTable.getScene().getWindow() instanceof Stage) {
                                     ((Stage) canalesTable.getScene().getWindow()).close(); 
@@ -238,7 +238,18 @@ public class CanalesListController {
         }
         return texts;
     }
-
+   
+    public void añadirCanalForzado(Canal canal) {
+        // 1. Evita duplicados
+        boolean exists = canales.stream()
+            .anyMatch(c -> c.getNombre().equalsIgnoreCase(canal.getNombre()));
+            
+        // 2. Si no existe, lo añade y la TableView se actualiza
+        if (!exists) {
+            canales.add(canal);
+            // Opcional: Re-ordenar la lista si es importante que esté siempre ordenada.
+        }
+    }
 
     public void cargaCanalesServidor() {
         if (bot == null || !bot.isConnected()) {
