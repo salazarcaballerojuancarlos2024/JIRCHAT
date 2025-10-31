@@ -22,7 +22,6 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 import javafx.util.Duration;
-
 import org.jibble.pircbot.DccFileTransfer;
 // ⭐ IMPORTS DE PIRCBOT 1.5.0
 // ELIMINADO: import org.jibble.pircbot.DccFileTransfer; // Ya no es necesario
@@ -31,8 +30,6 @@ import org.jibble.pircbot.PircBot;
 import irc.CanalVentana;
 import irc.ChatBot; 
 // ELIMINADO: import dcc.TransferManager; 
-
-
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
@@ -40,12 +37,13 @@ import java.io.InputStreamReader;
 import java.net.InetAddress;
 import java.net.URL;
 import java.net.UnknownHostException;
-
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import dcc.DccTransferController;
 
 
 // ⭐ YA NO EXTIENDE NINGUNA CLASE DE EVENTOS DE IRC
@@ -64,6 +62,7 @@ public class ChatController {
     private static final String NICKNAME = "Sakkiles4321";
     private static final String SERVER = "irc.example.org";
     private static final int PORT = 6667; 
+    private Stage stagePrincipal;
 
     // Paneles
     private StackPane rightPane;
@@ -122,16 +121,25 @@ public class ChatController {
         // Opcional: Asegúrate de que el CanalesListController también tenga una referencia al bot o al MainController si lo necesita
         // if (bot != null) controller.setBot(bot); 
     }
+    
+ // En ChatController.java
+
+    /**
+     * Devuelve la Stage principal (ventana) de la aplicación.
+     */
+    public Stage getStagePrincipal() {
+        return this.stagePrincipal;
+    }
 
     public void agregarCanalAbierto(String channelName) throws IOException {
-        // 1. Evitar duplicados en la lista de canales unidos (ListView/TabPane de la GUI principal)
+        // 1. Evitar duplicados en la lista de canales unidos
         if (!canalesUnidos.contains(channelName)) {
             canalesUnidos.add(channelName);
         }
 
         // 2. Comprobar si la ventana del canal ya está abierta
-        if (canalesAbiertos.containsKey(channelName)) {
-            CanalVentana existente = canalesAbiertos.get(channelName);
+        if (canalesAbiertos.containsKey(channelName.toLowerCase())) {
+            CanalVentana existente = canalesAbiertos.get(channelName.toLowerCase());
             if (existente != null && existente.stage != null) {
                 existente.stage.toFront();
             }
@@ -150,8 +158,7 @@ public class ChatController {
             canalController.setBot(this.bot); 
             canalController.setMainController(this);
 
-            // ⭐ PASO CLAVE 1: REGISTRAR EL DELEGADO DE NOMBRES
-            // El bot ahora sabrá a qué controlador CanalController enviar las respuestas 353/366.
+            // REGISTRAR EL DELEGADO DE NOMBRES
             if (this.bot != null) {
                 this.bot.registerNamesDelegate(channelName, canalController); 
             }
@@ -165,24 +172,35 @@ public class ChatController {
             CanalVentana nuevoWrapper = new CanalVentana(stage, canalController);
             canalesAbiertos.put(channelName.toLowerCase(), nuevoWrapper);
             
-            // ⭐ PASO CLAVE 2: Desregistro al cerrar
+            // ⭐ CONFIGURACIÓN CLAVE: Evento de cierre (Cerrar con 'X')
             stage.setOnCloseRequest(event -> {
+                // 1. Enviar el comando PART (Abandonar el canal en el servidor)
                 if (this.bot != null) {
-                    // Elimina el delegado al cerrar la ventana
+                    // Notifica al servidor que el usuario abandona el canal
+                    this.bot.partChannel(channelName);
+                    // Notifica al usuario en la consola principal
+                    appendSystemMessage("👋 Has abandonado el canal " + channelName); 
+                }
+                
+                // 2. Limpieza interna (Desregistro del delegado y eliminación del mapa)
+                if (this.bot != null) {
+                    // Elimina el delegado para detener el manejo de eventos de nombres
                     this.bot.registerNamesDelegate(channelName, null); 
                 }
-                // Asumiendo que tienes un método para limpiar el canal de canalesAbiertos, etc.
+                
+                // 3. Limpiar el registro interno de canales abiertos
                 cerrarCanalDesdeVentana(channelName); 
+                
+                // Nota: El evento no se consume (event.consume()), permitiendo que la Stage se cierre
             });
             
-            // 7. Mostrar la ventana y solicitar la lista de usuarios
+            // 7. Mostrar la ventana y lógica condicional JOIN/NAMES
             stage.show();
 
-            // ⭐ PASO CLAVE 3: LÓGICA CONDICIONAL JOIN/NAMES
+            // LÓGICA CONDICIONAL JOIN/NAMES
             if (this.bot != null) {
                 if (this.bot.isJoined(channelName)) {
-                    // Si ya estamos unidos (ej. canales por defecto #chat, #test),
-                    // solo pedimos la lista de usuarios.
+                    // Si ya estamos unidos (ej. canales por defecto), solo pedimos la lista de usuarios.
                     this.bot.sendRawLine("NAMES " + channelName); 
                 } else {
                     // Si no estamos unidos, nos unimos. La respuesta onJoin del bot
@@ -194,8 +212,7 @@ public class ChatController {
         } catch (IOException e) {
             System.err.println("Error al intentar abrir la ventana del canal " + channelName + ": " + e.getMessage());
             e.printStackTrace();
-            // Propagar o manejar el error
-            throw e; // Volvemos a lanzar la IOException para el try/catch de la llamada
+            throw e;
         }
     }
     
@@ -437,67 +454,40 @@ public class ChatController {
     }
     
  // Clase ChatController.java (Método Regenerado)
-    public void handleIncomingDcc(String senderNick, DccFileTransfer transfer) {
+    public void handleIncomingDccRequest(String senderNick, DccFileTransfer transfer) {
         // 1. Ejecutar la UI en el Hilo de JavaFX
         Platform.runLater(() -> {
-            final String TARGET_DIR = "C:\\temp\\descargas"; // ⭐ RUTA DE GUARDADO FIJA
-            String fileName = transfer.getFile().getName();
-            long fileSize = transfer.getSize();
-
-            String sizeText = formatFileSize(fileSize);
-
-            appendSystemMessage(
-                "📬 Solicitud DCC de " + senderNick + ": " + fileName + " (" + sizeText + 
-                "). ¡Revisa el diálogo de aceptación!"
-            );
-
-            // Crear el diálogo de confirmación
-            Alert alert = new Alert(
-                AlertType.CONFIRMATION,
-                "¿Aceptar el archivo '" + fileName + "' (" + sizeText + ") de " + senderNick + 
-                "? Se guardará en " + TARGET_DIR,
-                ButtonType.YES,
-                ButtonType.NO
-            );
-            alert.setTitle("Transferencia DCC Entrante");
-            alert.setHeaderText("Transferencia de Archivo: " + fileName);
-
-            // ⭐ El showAndWait() sigue siendo el punto de bloqueo, ¡responde rápido!
-            Optional<ButtonType> result = alert.showAndWait();
-
-            if (result.isPresent() && result.get() == ButtonType.YES) {
+            try {
+                // ⭐ 1. Cargar el FXML de la nueva ventana de transferencia
+                // Asegúrate de que esta ruta es correcta para tu proyecto
+                FXMLLoader loader = new FXMLLoader(getClass().getResource("JIRCHAT_DccTransferWindows.fxml"));
+                Parent root = loader.load();
                 
-                // 2. El usuario acepta: Iniciar la transferencia en un HILO DE RED
-                new Thread(() -> {
-                    try {
-                        // 2a. Asegurar que el directorio de destino exista
-                        File targetDirectory = new File(TARGET_DIR);
-                        if (!targetDirectory.exists()) {
-                            targetDirectory.mkdirs(); // Crea la carpeta si no existe
-                        }
-                        
-                        // 2b. Definir la ruta final del archivo
-                        File saveFile = new File(targetDirectory, fileName);
-                        
-                        // Mostrar mensaje de inicio (De vuelta al Hilo de JavaFX)
-                        Platform.runLater(() -> {
-                            appendSystemMessage("📥 Aceptando: Guardando " + fileName + " en: " + saveFile.getAbsolutePath());
-                        });
-                        
-                        // ⭐ LÍNEA CRÍTICA: Iniciar la conexión y la recepción de datos.
-                        transfer.receive(saveFile, false); 
-                        
-                    } catch (Exception e) {
-                        Platform.runLater(() -> {
-                            appendSystemMessage("❌ Error al iniciar la recepción del archivo: " + fileName);
-                        });
-                        transfer.close();
-                        log.error("Error en el thread de recepción DCC para {}: {}", fileName, e.getMessage(), e);
-                    }
-                }).start();
-            } else {
-                // 3. El usuario rechaza
-                appendSystemMessage("🚫 Solicitud DCC rechazada para el archivo: " + fileName);
+                DccTransferController dccController = loader.getController();
+
+                // 2. Configurar la Stage (Ventana No Bloqueante)
+                Stage stage = new Stage();
+                stage.setTitle("Transferencia DCC de " + senderNick);
+                stage.setScene(new Scene(root));
+                stage.initModality(Modality.NONE); // ⭐ IMPORTANTE: No bloquea la aplicación
+                stage.initOwner(getStagePrincipal()); // Asume que tienes un getter para la Stage principal
+                
+                // 3. Inicializar el controlador de la ventana de transferencia
+                // Le pasamos el Bot, la Transferencia, el Controlador principal y la Stage para el cierre.
+                dccController.initializeTransfer(bot, transfer, this, stage, senderNick); 
+
+                // 4. Mostrar la ventana de decisión (se abrirá como una ventana flotante)
+                stage.show();
+                
+                appendSystemMessage("📬 Solicitud DCC de " + senderNick + ". ¡Revisa la ventana flotante!");
+
+                // 5. Opcional: Integración en el panel izquierdo (si usas una lista de canales/privados)
+                // Llama aquí a la lógica para añadir un "botón" DCC en tu panel lateral.
+                // Ejemplo: actualizarPanelLateralDcc(senderNick, transfer.getFile().getName(), dccController);
+
+            } catch (IOException e) {
+                appendSystemMessage("❌ Error interno al abrir el diálogo de transferencia DCC.");
+                log.error("Error al cargar DccTransferWindow.fxml", e);
                 transfer.close();
             }
         });
@@ -506,7 +496,7 @@ public class ChatController {
     /**
      * Método auxiliar para formatear el tamaño de bytes a KB/MB.
      */
-    private String formatFileSize(long bytes) {
+    public String formatFileSize(long bytes) {
         if (bytes < 1024) return bytes + " Bytes";
         int unit = 1024;
         String[] units = {"KB", "MB", "GB"};

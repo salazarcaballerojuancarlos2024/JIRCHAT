@@ -103,44 +103,52 @@ public class PrivadoController {
             return;
         }
         
-        // ⭐ Mover las actualizaciones de UI al Hilo de JavaFX (Correcto)
+        final String targetNick = destinatario; // Almacenamos el destinatario para el logger/error
+        final String fileName = archivo.getName();
+        
+        // 1. Preparar la UI para el envío
         if (progressBarDcc != null) {
             progressBarDcc.setProgress(0.0);
             progressBarDcc.setVisible(true);
-            // La actualización de la barra de progreso se registra después
         }
 
-        // 2. Registrar el callback de progreso para este destinatario
-        bot.registerDccProgressConsumer(destinatario, getDccProgressConsumer(archivo));
+        // 2. Registrar el callback de progreso antes de iniciar el envío
+        // Asumimos que registerDccProgressConsumer está implementado en tu ChatBot para esta versión.
+        bot.registerDccProgressConsumer(targetNick, getDccProgressConsumer(archivo));
         
-     // Código Correcto para el Emisor (dentro del nuevo Thread que creaste)
+        // 3. Iniciar el envío en un nuevo Thread (para no bloquear la UI)
         new Thread(() -> {
             try {
-                // 1. Iniciar el envío DCC
-                // Ya NO asignamos el resultado a una variable
-                bot.sendDccFile(archivo, destinatario, 120000); 
-                
-                // El objeto DccFileTransfer se crea internamente y se puede acceder más tarde
-                // si fuera necesario, pero la forma en que registraste el consumidor ya lo maneja.
-
-                // 2. Notificar a la UI
+                // Notificar a la UI que la solicitud se está enviando
                 Platform.runLater(() -> {
-                    appendSystemMessage("📨 Solicitando transferencia DCC de: " + archivo.getName() + " a " + destinatario);
+                    appendSystemMessage("📨 Solicitando transferencia DCC de: " + fileName + " a " + targetNick);
                 });
-
-                // NOTA: Si necesitas llamar a setPacketDelay, no puedes hacerlo directamente aquí.
-                // PircBot aplica el packet delay a través de una propiedad global o una clase interna.
-                // Si necesitas aplicar el fix de 50ms, debes hacerlo antes de llamar a sendDccFile
-                // usando el método setOutgoingDccPacketDelay(50) si PircBot lo expone, o
-                // aceptar que el logger de 50ms ya lo está aplicando.
+                
+                // LÍNEA CRÍTICA: Iniciar el envío DCC. 120000ms (2 minutos) de timeout.
+                bot.sendDccFile(archivo, targetNick, 120000); 
+                
+                // El resto de la notificación de éxito la gestiona el getDccProgressConsumer 
+                // cuando (transferred >= total).
 
             } catch (Exception e) {
-                // ... (Manejo de errores) ...
+                // ⭐ TRATAMIENTO DE ERRORES COMPLETO: Notificar y limpiar la UI.
+                Platform.runLater(() -> {
+                    String errorMsg = "❌ Fallo al enviar " + fileName + " a " + targetNick + ". Error: " + e.getMessage();
+                    appendSystemMessage(errorMsg);
+                    
+                    // Ocultar barra de progreso y limpiarla
+                    if (progressBarDcc != null) {
+                        progressBarDcc.setProgress(0.0);
+                        progressBarDcc.setVisible(false);
+                    }
+                });
+                // Registro del error para depuración
+                System.err.println("Error al iniciar/ejecutar DCC Send: " + e.toString());
             }
         }).start();
     }
-    
-    // ⭐ LÓGICA DE ACTUALIZACIÓN DE BARRA DE PROGRESO (Lado Emisor)
+
+    // LÓGICA DE ACTUALIZACIÓN DE BARRA DE PROGRESO (Lado Emisor)
     private BiConsumer<Long, Long> getDccProgressConsumer(File file) {
         final String fileName = file.getName();
         return (transferred, total) -> {

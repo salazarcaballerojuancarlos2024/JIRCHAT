@@ -237,34 +237,36 @@ public class ChatBot extends PircBot {
      * Manejo del lado RECEPTOR (onIncomingFileTransfer).
      */
  
- // Clase ChatBot.java (RECEPTOR) - ¡Cambio para probar la conexión!
+ 
  // Clase ChatBot.java (RECEPTOR) - SIGUIENDO EL JAVADOC
+ // En ChatBot.java
+
     @Override
     protected void onIncomingFileTransfer(DccFileTransfer transfer) {
-    	log.info("▶️ EVENTO onIncomingFileTransfer DISPARADO. Solicitando aceptación de archivo.");
         
-        try {
-            final String TARGET_DIR = "C:\\temp\\descargas"; // Usamos una ruta temporal
-            File saveDir = new File(TARGET_DIR); 
-            saveDir.mkdirs(); 
-            
-            File saveFile = new File(saveDir, transfer.getFile().getName());
-            
-            log.warn("DCC RECEIVE: Aceptando automáticamente. Guardando en: {}", saveFile.getAbsolutePath());
-            
-            // ⭐ LÍNEA CRÍTICA: Se llama directamente en el HILO DE PIRCBOT.
-            // Esto garantiza la máxima velocidad de respuesta para el handshake.
-            transfer.receive(saveFile, false); 
-            
-            // Informar a la UI (usando Platform.runLater para seguridad)
-            Platform.runLater(() -> {
-                mainController.appendSystemMessage("📥 Iniciada recepción automática del archivo: " + saveFile.getName());
-            });
-            
-        } catch (Exception e) {
-            log.error("❌ Fallo CRÍTICO al iniciar la recepción. La conexión FALLÓ.", e);
-            transfer.close();
-        }
+        // El logger muestra que la solicitud ha llegado.
+        log.info("🔔 Solicitud DCC entrante de: {} para el archivo: {}", 
+                 transfer.getNick(), transfer.getFile().getName());
+
+        // ⭐ ¡CAMBIO CRÍTICO!
+        // No aceptamos el archivo aquí. En su lugar, delegamos la decisión al ChatController
+        // para que muestre el popup de aceptación/denegación en la UI.
+        
+        Platform.runLater(() -> {
+            // Asumiendo que mainController es de tipo ChatController
+            // y que tiene el nuevo método para mostrar la ventana de transferencia.
+            if (mainController != null) {
+            	mainController.handleIncomingDccRequest(NICKNAME, transfer);
+             
+            } else {
+                // Si el controlador principal no está listo, denegar para evitar cuelgues
+                log.warn("MainController no disponible. Denegando transferencia automáticamente.");
+                transfer.close(); 
+            }
+        });
+        
+        // Importante: El hilo de PircBot termina aquí. La acción (aceptar o denegar)
+        // se realiza más tarde cuando el usuario interactúe con el popup de JavaFX.
     }
     /**
      * Evento de fin de transferencia (onFileTransferFinished).
