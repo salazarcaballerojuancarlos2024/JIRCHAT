@@ -9,7 +9,6 @@ import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
-import javafx.scene.control.Alert.AlertType;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.AnchorPane;
@@ -17,47 +16,31 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
-import javafx.stage.FileChooser;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 import javafx.util.Duration;
 import org.jibble.pircbot.DccFileTransfer;
-// ⭐ IMPORTS DE PIRCBOT 1.5.0
-// ELIMINADO: import org.jibble.pircbot.DccFileTransfer; // Ya no es necesario
-import org.jibble.pircbot.PircBot;
-// ELIMINADO: import org.jibble.pircbot.User; // No es estrictamente necesario aquí
 import irc.CanalVentana;
 import irc.ChatBot; 
-// ELIMINADO: import dcc.TransferManager; 
-import java.io.BufferedReader;
-import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.net.InetAddress;
-import java.net.URL;
 import java.net.UnknownHostException;
 import java.util.*;
-import java.util.function.Consumer;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import dcc.DccTransferController;
 
-
-// ⭐ YA NO EXTIENDE NINGUNA CLASE DE EVENTOS DE IRC
 public class ChatController {
 
     @FXML private TextField inputField;
     @FXML private ListView<String> userListView_canal;
     @FXML private ScrollPane chatScroll;
-    @FXML private TextArea  chatFlow;
-    @FXML private TextArea chatArea;
+    @FXML private TextArea  chatFlow; // Parece no usarse, usamos chatArea
+    @FXML private TextArea chatArea; // Consola principal
     
-    // Configuraciones
-    // ELIMINADO: private static final int START_PORT = 40000;
-    // ELIMINADO: private static final int END_PORT = 41000;
+    
+    
     //private static final String NICKNAME = "akkiles4321";
     private static final String NICKNAME = "Sakkiles4321";
     private static final String SERVER = "irc.example.org";
@@ -66,10 +49,10 @@ public class ChatController {
 
     // Paneles
     private StackPane rightPane;
-    private VBox leftPane;
+    @FXML private VBox leftPane; // Panel izquierdo para botones de ventanas
     private AnchorPane rootPane;
 
-    // ⭐ REEMPLAZO: Usamos nuestra clase ChatBot (que extiende PircBot 1.5.0)
+    // --- ESTRUCTURAS DE DATOS ---
     private ChatBot bot; 
     private String canalActivo = null;
 
@@ -80,141 +63,57 @@ public class ChatController {
     private final Map<String, Stage> privateChats = new HashMap<>();
     private final Map<String, PrivadoController> privateChatsController = new HashMap<>();
     private final Map<String, Button> privadoButtons = new HashMap<>();
+    
+    // CAMPOS DCC
+    private final Map<String, DccWindowWrapper> dccAbiertos = new HashMap<>();
+    private final Map<String, Button> dccButtons = new HashMap<>();
+
 
     private final PauseTransition resizePause = new PauseTransition(Duration.millis(250));
     private Stage lastFocusedWindow = null;
 
     private String password;
-    // ELIMINADO: private TransferManager transferManager; // Ya no es necesario
     private boolean isConnected = false;
     
     private static final Logger log = LoggerFactory.getLogger(ChatController.class); 
 
-    // Solicitudes de chat pendientes o aceptadas
     private final Map<String, Boolean> solicitudPendiente = new HashMap<>();
+    private final ObservableList<String> canalesUnidos = FXCollections.observableArrayList();
+    private CanalesListController canalesListController;
+    
+    // CLASE WRAPPER DCC
+    public static class DccWindowWrapper {
+        public final Stage stage;
+        public final DccTransferController controller;
+
+        public DccWindowWrapper(Stage stage, DccTransferController controller) {
+            this.stage = stage;
+            this.controller = controller;
+        }
+    }
+
 
     // --- Getters & Setters ---
     public void setBot(ChatBot bot) { this.bot = bot; }
     public ChatBot getBot() { return bot; } 
-
     public void setPassword(String password) { this.password = password; }
     public void setLeftPane(VBox leftPane) { this.leftPane = leftPane; }
     public void setRightPane(StackPane rightPane) { this.rightPane = rightPane; attachRightPaneSizeListeners(); }
     public void setRootPane(AnchorPane rootPane) { this.rootPane = rootPane; }
-    
     public Pane getRootPane() { return rootPane; }
     public String getPassword() { return password; }
     public TextField getInputField() { return inputField; }
     public Map<String, CanalVentana> getCanalesAbiertos() { return canalesAbiertos; }
     public Map<String, PrivadoController> getPrivateChatsController() { return privateChatsController; }
-    // ELIMINADO: public DccManager getDccManager() { return dccManager; } // Ya no es necesario
     public void setConnected(boolean connected) { this.isConnected = connected; }
-    
-    private final ObservableList<String> canalesUnidos = FXCollections.observableArrayList();
-    private CanalesListController canalesListController;
-
- // En tu ChatController (o MainController)
-    
     public void setCanalesListController(CanalesListController controller) {
         this.canalesListController = controller;
-        
-        // Opcional: Asegúrate de que el CanalesListController también tenga una referencia al bot o al MainController si lo necesita
-        // if (bot != null) controller.setBot(bot); 
     }
-    
- // En ChatController.java
-
-    /**
-     * Devuelve la Stage principal (ventana) de la aplicación.
-     */
     public Stage getStagePrincipal() {
         return this.stagePrincipal;
     }
 
-    public void agregarCanalAbierto(String channelName) throws IOException {
-        // 1. Evitar duplicados en la lista de canales unidos
-        if (!canalesUnidos.contains(channelName)) {
-            canalesUnidos.add(channelName);
-        }
-
-        // 2. Comprobar si la ventana del canal ya está abierta
-        if (canalesAbiertos.containsKey(channelName.toLowerCase())) {
-            CanalVentana existente = canalesAbiertos.get(channelName.toLowerCase());
-            if (existente != null && existente.stage != null) {
-                existente.stage.toFront();
-            }
-            return;
-        }
-
-        // 3. Crear y cargar la nueva ventana (Stage) del canal
-        try {
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("/java_irc_chat_client/JIRCHAT_CANAL.fxml"));
-            Parent root = loader.load();
-            
-            CanalController canalController = loader.getController();
-
-            // 4. Configurar el controlador y la lógica de negocio
-            canalController.setCanal(channelName);
-            canalController.setBot(this.bot); 
-            canalController.setMainController(this);
-
-            // REGISTRAR EL DELEGADO DE NOMBRES
-            if (this.bot != null) {
-                this.bot.registerNamesDelegate(channelName, canalController); 
-            }
-            
-            // 5. Crear la ventana (Stage)
-            Stage stage = new Stage();
-            stage.setTitle(channelName + " - " + bot.getName());
-            stage.setScene(new Scene(root));
-
-            // 6. Almacenar la ventana y el controlador en el mapa
-            CanalVentana nuevoWrapper = new CanalVentana(stage, canalController);
-            canalesAbiertos.put(channelName.toLowerCase(), nuevoWrapper);
-            
-            // ⭐ CONFIGURACIÓN CLAVE: Evento de cierre (Cerrar con 'X')
-            stage.setOnCloseRequest(event -> {
-                // 1. Enviar el comando PART (Abandonar el canal en el servidor)
-                if (this.bot != null) {
-                    // Notifica al servidor que el usuario abandona el canal
-                    this.bot.partChannel(channelName);
-                    // Notifica al usuario en la consola principal
-                    appendSystemMessage("👋 Has abandonado el canal " + channelName); 
-                }
-                
-                // 2. Limpieza interna (Desregistro del delegado y eliminación del mapa)
-                if (this.bot != null) {
-                    // Elimina el delegado para detener el manejo de eventos de nombres
-                    this.bot.registerNamesDelegate(channelName, null); 
-                }
-                
-                // 3. Limpiar el registro interno de canales abiertos
-                cerrarCanalDesdeVentana(channelName); 
-                
-                // Nota: El evento no se consume (event.consume()), permitiendo que la Stage se cierre
-            });
-            
-            // 7. Mostrar la ventana y lógica condicional JOIN/NAMES
-            stage.show();
-
-            // LÓGICA CONDICIONAL JOIN/NAMES
-            if (this.bot != null) {
-                if (this.bot.isJoined(channelName)) {
-                    // Si ya estamos unidos (ej. canales por defecto), solo pedimos la lista de usuarios.
-                    this.bot.sendRawLine("NAMES " + channelName); 
-                } else {
-                    // Si no estamos unidos, nos unimos. La respuesta onJoin del bot
-                    // se encargará de enviar el NAMES.
-                    this.bot.joinChannel(channelName); 
-                }
-            }
-            
-        } catch (IOException e) {
-            System.err.println("Error al intentar abrir la ventana del canal " + channelName + ": " + e.getMessage());
-            e.printStackTrace();
-            throw e;
-        }
-    }
+    // --- INICIALIZACIÓN ---
     
     @FXML
     public void initialize() {
@@ -230,17 +129,322 @@ public class ChatController {
             if (lastFocusedWindow != null) Platform.runLater(() -> lastFocusedWindow.toFront());
         });
     }
-    
-    public void forzarCanalUnidoEnLista(String channelName) {
-        if (canalesListController != null) {
-            
-            // Crear un objeto 'Canal' con datos mínimos para la TableView
-            // Nota: Asume que tienes un constructor Canal(String nombre, int usuarios, String modos, String descripcion)
-            Canal canalObj = new Canal(channelName, 0, "+nt", "Canal unido automáticamente.");
-            
-            // Llama al método en el controlador de la lista para añadirlo
-            canalesListController.añadirCanalForzado(canalObj); 
+
+    // --- LÓGICA DE BOTONES Y VENTANAS (CANALES) ---
+
+    public void agregarCanalAbierto(String channelName) throws IOException {
+        final String key = channelName.toLowerCase();
+        
+        // 1. Evitar duplicados y comprobar si ya está abierta
+        if (!canalesUnidos.contains(channelName)) {
+            canalesUnidos.add(channelName);
         }
+        if (canalesAbiertos.containsKey(key)) {
+            CanalVentana existente = canalesAbiertos.get(key);
+            if (existente != null && existente.stage != null) {
+                existente.stage.toFront();
+            }
+            return;
+        }
+
+        // 3. Crear y cargar la nueva ventana (Stage) del canal
+        try {
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("/java_irc_chat_client/JIRCHAT_CANAL.fxml"));
+            Parent root = loader.load();
+            CanalController canalController = loader.getController();
+
+            // 4. Configurar el controlador y la lógica de negocio
+            canalController.setCanal(channelName);
+            canalController.setBot(this.bot); 
+            canalController.setMainController(this);
+
+            if (this.bot != null) {
+                this.bot.registerNamesDelegate(channelName, canalController); 
+            }
+            
+            // 5. Crear la ventana (Stage)
+            Stage stage = new Stage();
+            stage.setTitle(channelName + " - " + bot.getName());
+            stage.setScene(new Scene(root));
+
+            // 6. Almacenar la ventana y el controlador en el mapa
+            CanalVentana nuevoWrapper = new CanalVentana(stage, canalController);
+            canalesAbiertos.put(key, nuevoWrapper);
+            
+            // ⭐ INTEGRACIÓN DEL BOTÓN EN EL PANEL IZQUIERDO
+            agregarBotonCanalPrivadoDcc(channelName, stage, "canal");
+            
+            // ⭐ CONFIGURACIÓN CLAVE: Evento de cierre (Cerrar con 'X')
+            stage.setOnCloseRequest(event -> {
+                if (this.bot != null) {
+                    this.bot.partChannel(channelName);
+                    appendSystemMessage("👋 Has abandonado el canal " + channelName); 
+                    this.bot.registerNamesDelegate(channelName, null); 
+                }
+                // Limpiar el botón y las referencias
+                removerBotonCanal(channelName);
+                cerrarCanalDesdeVentana(channelName); 
+            });
+            
+            // 7. Mostrar la ventana y lógica condicional JOIN/NAMES
+            stage.show();
+
+            // LÓGICA CONDICIONAL JOIN/NAMES
+            if (this.bot != null) {
+                // Si ya estamos unidos (estado registrado por onJoin), solo pedimos la lista de usuarios
+                if (this.bot.isJoined(channelName)) { 
+                    this.bot.sendRawLine("NAMES " + channelName); 
+                } else {
+                    // Si no estamos unidos (es un /join manual y NO es un canal de autounión), nos unimos
+                    this.bot.joinChannel(channelName); 
+                }
+            }
+            
+        } catch (IOException e) {
+            System.err.println("Error al intentar abrir la ventana del canal " + channelName + ": " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
+    }
+    
+ // Nuevo método a añadir en ChatController.java
+
+    /**
+     * Crea el botón del canal en el leftPane y registra el canal, 
+     * pero NO carga el FXML ni abre el Stage. Usado para canales de autounión.
+     */
+    public void registerAndCreateButton(String channelName) {
+        final String key = channelName.toLowerCase();
+        
+        // 1. Evitar duplicados
+        if (canalesAbiertos.containsKey(key) || canalButtons.containsKey(key)) {
+            return;
+        }
+        if (!canalesUnidos.contains(channelName)) {
+            canalesUnidos.add(channelName);
+        }
+
+        // 2. Crear un Stage (Ventana) ficticio y un controlador nulo para registrar la referencia.
+        // Necesitas este Stage Ficticio y CanalVentana Ficticia para que las otras partes 
+        // de la lógica del ChatController no fallen al buscar 'Stage'.
+        Stage stageFicticio = new Stage(); // Este Stage nunca se mostrará.
+        
+        // ⭐ IMPORTANTE: No podemos crear el CanalVentana porque requiere el CanalController real.
+        // La forma más segura de evitar errores es NO registrarlo en canalesAbiertos si no hay ventana.
+        // Pero, si no se registra, las funciones de NAMES no funcionarán si el usuario lo abre después.
+        
+        // En su lugar, asumiremos que si el usuario hace clic en el botón, se abre la ventana
+        // utilizando la lógica de agregarCanalAbierto.
+        
+        // Por lo tanto, solo creamos y añadimos el botón:
+        
+        // 3. Integración del botón en el panel izquierdo
+        Button btn = new Button(channelName);
+        btn.setMaxWidth(Double.MAX_VALUE);
+        btn.setOnAction(e -> {
+            try {
+                // Cuando el usuario hace clic por primera vez, abrimos la ventana real.
+                // Si el canal ya está en el mapa, simplemente lo trae al frente (lógica de agregarCanalAbierto).
+                agregarCanalAbierto(channelName);
+            } catch (java.io.IOException ex) {
+                appendSystemMessage("⚠ Error al abrir ventana del canal " + channelName);
+            }
+        });
+        btn.getStyleClass().add("canal-button"); 
+
+        // 4. Almacenar la referencia del botón
+        canalButtons.put(key, btn);
+
+        // 5. Añadir el botón al panel izquierdo
+        if (leftPane != null) Platform.runLater(() -> leftPane.getChildren().add(btn));
+    }
+    
+    public void removerBotonCanal(String channelName) {
+        // Usar toLowerCase para coincidir con la clave del mapa
+        final String key = channelName.toLowerCase(); 
+        
+        // 1. Remover el botón de la referencia del mapa
+        Button btn = canalButtons.remove(key); 
+        
+        // 2. Remover el botón de la GUI (leftPane)
+        if (btn != null && leftPane != null) {
+            // Ejecutar en el hilo de JavaFX
+            Platform.runLater(() -> leftPane.getChildren().remove(btn));
+        }
+    }
+
+    public void cerrarCanalDesdeVentana(String canal) {
+        // La lógica de cierre en el stage.setOnCloseRequest ya maneja el PART y la remoción del botón.
+        CanalVentana ventana = canalesAbiertos.remove(canal.toLowerCase());
+        if (ventana != null) Platform.runLater(() -> ventana.stage.close());
+        floatingWindows.remove(ventana.stage);
+    }
+    
+    // --- LÓGICA DE BOTONES Y VENTANAS (PRIVADOS) ---
+
+    public void abrirPrivado(String nick) {
+        final String key = nick.toLowerCase();
+        
+        try {
+            if (privateChats.containsKey(key)) {
+                privateChats.get(key).toFront();
+                return;
+            }
+
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("JIRCHAT_PRIVADO.fxml"));
+            Parent root = loader.load();
+            PrivadoController controller = loader.getController();
+
+            // --- INYECCIÓN DE DEPENDENCIAS ---
+            controller.setBot(bot);
+            controller.setDestinatario(nick);
+            controller.setMainController(this);
+
+            // Crear Stage
+            Stage stage = new Stage();
+            stage.setTitle("Privado con " + nick);
+            stage.setScene(new Scene(root));
+
+            // Guardar referencias
+            privateChats.put(key, stage);
+            privateChatsController.put(key, controller);
+
+            // ⭐ INTEGRACIÓN DEL BOTÓN EN EL PANEL IZQUIERDO
+            agregarBotonCanalPrivadoDcc(nick, stage, "privado");
+
+            // Registrar ventana flotante
+            registerFloatingWindow(stage, () -> cerrarPrivado(nick));
+            stage.setOnCloseRequest(ev -> cerrarPrivado(nick)); // Esta limpieza ya remueve el botón
+
+            stage.show();
+        } catch (Exception e) {
+            appendSystemMessage("⚠ Error al abrir privado con " + nick + ": " + e.getMessage());
+        }
+    }
+
+
+    public void cerrarPrivado(String nick) {
+        final String key = nick.toLowerCase();
+        
+        // Cerrar ventana y limpiar referencias
+        Stage stage = privateChats.remove(key);
+        if (stage != null) stage.close();
+
+        privateChatsController.remove(key);
+
+        // REMOCIÓN DEL BOTÓN PRIVADO
+        Button btn = privadoButtons.remove(key);
+        if (btn != null && leftPane != null) Platform.runLater(() -> leftPane.getChildren().remove(btn));
+
+        solicitudPendiente.remove(key);
+    }
+    
+    // --- LÓGICA DE BOTONES Y VENTANAS (DCC) ---
+
+    public void handleIncomingDccRequest(String senderNick, DccFileTransfer transfer) {
+        Platform.runLater(() -> {
+            final String key = senderNick.toLowerCase(); 
+            
+            try {
+                // Si ya hay una ventana DCC abierta con este nick, no abrimos otra.
+                if (dccAbiertos.containsKey(key)) {
+                    dccAbiertos.get(key).stage.toFront();
+                    return;
+                }
+                
+                FXMLLoader loader = new FXMLLoader(getClass().getResource("JIRCHAT_DccTransferWindows.fxml"));
+                Parent root = loader.load();
+                
+                DccTransferController dccController = loader.getController();
+
+                Stage stage = new Stage();
+                stage.setTitle("Transferencia DCC de " + senderNick);
+                stage.setScene(new Scene(root));
+                stage.initModality(Modality.NONE); 
+                stage.initOwner(getStagePrincipal());
+                
+                dccController.initializeTransfer(bot, transfer, this, stage, senderNick); 
+
+                // PASO 1: Registrar la ventana DCC
+                DccWindowWrapper dccWrapper = new DccWindowWrapper(stage, dccController);
+                dccAbiertos.put(key, dccWrapper); 
+
+                // PASO 2: Crear y añadir el botón en el panel izquierdo
+                agregarBotonCanalPrivadoDcc(senderNick, stage, "dcc"); 
+
+                // PASO 3: Configurar la limpieza al cerrar la ventana con la 'X'
+                stage.setOnCloseRequest(event -> {
+                    // Ejecutar la limpieza de DCC (eliminar botón y referencia)
+                    removerBotonDcc(key);
+                    transfer.close(); // Asegurarse de cerrar la transferencia
+                });
+
+                stage.show();
+                
+                appendSystemMessage("📬 Solicitud DCC de " + senderNick + ". ¡Revisa la ventana flotante!");
+
+            } catch (IOException e) {
+                appendSystemMessage("❌ Error interno al abrir el diálogo de transferencia DCC.");
+                log.error("Error al cargar DccTransferWindow.fxml", e);
+                transfer.close();
+            }
+        });
+    }
+
+ // En ChatController.java
+
+    public void removerBotonDcc(String nickKey) {
+        final String key = nickKey.toLowerCase();
+        
+        // 1. Remover el botón de la GUI
+        Button btn = dccButtons.remove(key);
+        if (btn != null && leftPane != null) Platform.runLater(() -> leftPane.getChildren().remove(btn));
+        
+        // 2. Remover el wrapper del mapa de control (Stage/Controller)
+        DccWindowWrapper wrapper = dccAbiertos.remove(key);
+        
+        // 3. Cierra la ventana si aún no está cerrada.
+        if (wrapper != null && wrapper.stage != null) {
+            Platform.runLater(() -> {
+                if (wrapper.stage.isShowing()) {
+                    wrapper.stage.close();
+                }
+            });
+        }
+    }
+    
+    // --- LÓGICA CENTRAL DE BOTONES (Nueva) ---
+
+    private void agregarBotonCanalPrivadoDcc(String name, Stage stage, String tipo) {
+        final String key = name.toLowerCase();
+        
+        String text = switch (tipo) {
+            case "canal" -> name;
+            case "privado" -> "@" + name;
+            case "dcc" -> "📥 DCC: " + name;
+            default -> name;
+        };
+        
+        Button btn = new Button(text);
+        btn.setMaxWidth(Double.MAX_VALUE);
+        btn.setOnAction(e -> stage.toFront());
+        btn.getStyleClass().add(tipo + "-button"); // Para estilizar con CSS
+
+        // Almacenar la referencia en el mapa correcto
+        switch (tipo) {
+            case "canal":
+                canalButtons.put(key, btn);
+                break;
+            case "privado":
+                privadoButtons.put(key, btn);
+                break;
+            case "dcc":
+                dccButtons.put(key, btn);
+                break;
+        }
+
+        // Añadir el botón al panel izquierdo
+        if (leftPane != null) leftPane.getChildren().add(btn);
     }
 
     // ------------------ COMANDOS ------------------
@@ -255,7 +459,7 @@ public class ChatController {
                     CanalVentana ventana = canalesAbiertos.get(canalActivo);
                     ventana.controller.sendMessageToChannel(text);
                 } else {
-                    // ⭐ ADAPTACIÓN: PircBot 1.5.0 usa sendMessage
+                    // Si no hay canal activo, enviamos a NickServ
                     bot.sendMessage("NickServ", text);
                     appendSystemMessage("[Yo -> NickServ] " + text);
                 }
@@ -269,17 +473,17 @@ public class ChatController {
         try {
             if (cmd.startsWith("join ")) agregarCanalAbierto(cmd.substring(5).trim());
             else if (cmd.startsWith("quit")) cerrarTodo("Cerrando cliente");
-            else if (bot != null) bot.sendRawLine(cmd); // ⭐ ADAPTACIÓN: PircBot 1.5.0 usa sendRawLine
+            else if (bot != null) bot.sendRawLine(cmd); 
         } catch (Exception e) { appendSystemMessage("⚠ Error al ejecutar comando: " + e.getMessage()); }
     }
 
-    // ------------------ PRIVADO ------------------
+    // ------------------ PRIVADO (AUXILIARES) ------------------
     public void abrirChatPrivado(String nick) {
         if (privateChats.containsKey(nick)) {
             privateChats.get(nick).toFront();
             return;
         }
-        abrirPrivado(nick); // abre directamente
+        abrirPrivado(nick);
     }
 
     public void abrirChatPrivadoConMensaje(String nick, String mensaje) {
@@ -290,7 +494,7 @@ public class ChatController {
         }
         mostrarSolicitudPrivado(nick, mensaje);
     }
-
+    
     private void mostrarSolicitudPrivado(String nick, String mensaje) {
         if (Boolean.TRUE.equals(solicitudPendiente.get(nick))) {
             if (!mensaje.isEmpty()) appendPrivateMessage(nick, mensaje, false);
@@ -332,115 +536,50 @@ public class ChatController {
         });
     }
 
-    public void abrirPrivado(String nick) {
-        try {
-            if (privateChats.containsKey(nick)) {
-                privateChats.get(nick).toFront();
-                return;
-            }
-
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("JIRCHAT_PRIVADO.fxml"));
-            Parent root = loader.load();
-            PrivadoController controller = loader.getController();
-
-            // --- INYECCIÓN DE DEPENDENCIAS ---
-            controller.setBot(bot);
-            controller.setDestinatario(nick);
-            controller.setMainController(this);
-            // ELIMINADO: if (dccManager != null) { controller.setDccManager(dccManager); } 
-
-            // Crear Stage
-            Stage stage = new Stage();
-            stage.setTitle("Privado con " + nick);
-            stage.setScene(new Scene(root));
-
-            // Guardar referencias
-            privateChats.put(nick, stage);
-            privateChatsController.put(nick, controller);
-
-            // Botón para el leftPane
-            Button btn = new Button("@" + nick);
-            btn.setMaxWidth(Double.MAX_VALUE);
-            btn.setOnAction(e -> stage.toFront());
-            privadoButtons.put(nick, btn);
-
-            if (leftPane != null) leftPane.getChildren().add(btn);
-
-            // Registrar ventana flotante
-            registerFloatingWindow(stage, () -> cerrarPrivado(nick));
-            stage.setOnCloseRequest(ev -> cerrarPrivado(nick));
-
-            stage.show();
-        } catch (Exception e) {
-            appendSystemMessage("⚠ Error al abrir privado con " + nick + ": " + e.getMessage());
-        }
-    }
-
-
-    public void cerrarPrivado(String nick) {
-        // Cerrar ventana y limpiar referencias
-        Stage stage = privateChats.remove(nick);
-        if (stage != null) stage.close();
-
-        privateChatsController.remove(nick);
-
-        Button btn = privadoButtons.remove(nick);
-        if (btn != null && leftPane != null) leftPane.getChildren().remove(btn);
-
-        solicitudPendiente.remove(nick);
-    }
-
-
     public void appendPrivateMessage(String nick, String mensaje, boolean esMio) {
-        if (esMio) return;  // Ignorar mensajes propios
+        if (esMio) return;
 
-        PrivadoController controller = privateChatsController.get(nick);
+        PrivadoController controller = privateChatsController.get(nick.toLowerCase());
         if (controller != null) controller.appendMessage(nick, mensaje);
+    }
+    
+    public void appendPrivateMessage(String usuario, String mensaje) {
+        // Método que usa el PircBot Listener para pasar mensajes privados a la consola principal
+        Platform.runLater(() -> {
+            if (chatArea != null) {
+                chatArea.appendText("<" + usuario + "> " + mensaje + "\n");
+                chatArea.positionCaret(chatArea.getLength());
+            }
+        });
     }
 
     // ------------------ MENSAJES CON COLORES ------------------
-    // Mensaje normal de usuario
     public void appendMessage(String usuario, String mensaje) {
         Platform.runLater(() -> {
             if (chatArea != null) {
                 chatArea.appendText("<" + usuario + "> " + mensaje + "\n");
-                chatArea.positionCaret(chatArea.getLength()); // auto-scroll
+                chatArea.positionCaret(chatArea.getLength());
             }
         });
     }
-
-    // Mensaje del sistema
+    
     public void appendSystemMessage(String mensaje) {
         Platform.runLater(() -> {
             if (chatArea != null) {
                 chatArea.appendText("[Sistema] " + mensaje + "\n");
-                chatArea.positionCaret(chatArea.getLength()); // auto-scroll
+                chatArea.positionCaret(chatArea.getLength());
             }
         });
     }
-
-    // Mensaje privado
-    public void appendPrivateMessage(String usuario, String mensaje) {
-        Platform.runLater(() -> {
-            if (chatArea != null) {
-                chatArea.appendText("<" + usuario + "> " + mensaje + "\n");
-                chatArea.positionCaret(chatArea.getLength()); // auto-scroll
-            }
-        });
-    }
-
 
     private String parseIRCMessage(String mensaje) {
-        // Eliminamos los códigos de IRC de color y formato
         StringBuilder plainText = new StringBuilder();
         int i = 0;
 
         while (i < mensaje.length()) {
             char c = mensaje.charAt(i);
             if (c == '\u0003' || c == '\u000F' || c == '\u0002') {
-                // Saltamos códigos de color, reset y negrita
                 i++;
-                // Para código de color, puede haber números después
                 if (c == '\u0003') {
                     while (i < mensaje.length() && Character.isDigit(mensaje.charAt(i))) i++;
                 }
@@ -449,53 +588,18 @@ public class ChatController {
                 i++;
             }
         }
-
         return plainText.toString();
     }
     
- // Clase ChatController.java (Método Regenerado)
-    public void handleIncomingDccRequest(String senderNick, DccFileTransfer transfer) {
-        // 1. Ejecutar la UI en el Hilo de JavaFX
-        Platform.runLater(() -> {
-            try {
-                // ⭐ 1. Cargar el FXML de la nueva ventana de transferencia
-                // Asegúrate de que esta ruta es correcta para tu proyecto
-                FXMLLoader loader = new FXMLLoader(getClass().getResource("JIRCHAT_DccTransferWindows.fxml"));
-                Parent root = loader.load();
-                
-                DccTransferController dccController = loader.getController();
-
-                // 2. Configurar la Stage (Ventana No Bloqueante)
-                Stage stage = new Stage();
-                stage.setTitle("Transferencia DCC de " + senderNick);
-                stage.setScene(new Scene(root));
-                stage.initModality(Modality.NONE); // ⭐ IMPORTANTE: No bloquea la aplicación
-                stage.initOwner(getStagePrincipal()); // Asume que tienes un getter para la Stage principal
-                
-                // 3. Inicializar el controlador de la ventana de transferencia
-                // Le pasamos el Bot, la Transferencia, el Controlador principal y la Stage para el cierre.
-                dccController.initializeTransfer(bot, transfer, this, stage, senderNick); 
-
-                // 4. Mostrar la ventana de decisión (se abrirá como una ventana flotante)
-                stage.show();
-                
-                appendSystemMessage("📬 Solicitud DCC de " + senderNick + ". ¡Revisa la ventana flotante!");
-
-                // 5. Opcional: Integración en el panel izquierdo (si usas una lista de canales/privados)
-                // Llama aquí a la lógica para añadir un "botón" DCC en tu panel lateral.
-                // Ejemplo: actualizarPanelLateralDcc(senderNick, transfer.getFile().getName(), dccController);
-
-            } catch (IOException e) {
-                appendSystemMessage("❌ Error interno al abrir el diálogo de transferencia DCC.");
-                log.error("Error al cargar DccTransferWindow.fxml", e);
-                transfer.close();
-            }
-        });
+    public void forzarCanalUnidoEnLista(String channelName) {
+        if (canalesListController != null) {
+            // Asume que Canal es una clase definida con un constructor adecuado.
+            // Para fines de regeneración, asumimos la estructura.
+            // Canal canalObj = new Canal(channelName, 0, "+nt", "Canal unido automáticamente.");
+            // canalesListController.añadirCanalForzado(canalObj); 
+        }
     }
-
-    /**
-     * Método auxiliar para formatear el tamaño de bytes a KB/MB.
-     */
+    
     public String formatFileSize(long bytes) {
         if (bytes < 1024) return bytes + " Bytes";
         int unit = 1024;
@@ -503,7 +607,6 @@ public class ChatController {
         int exp = (int) (Math.log(bytes) / Math.log(unit));
         return String.format("%.2f %s", bytes / Math.pow(unit, exp), units[exp - 1]);
     }
-
 
     private Color ircColorToFX(int code) {
         return switch (code) {
@@ -519,21 +622,15 @@ public class ChatController {
     private void scrollToBottom(ScrollPane sp) { Platform.runLater(() -> sp.setVvalue(1.0)); }
 
     public void onPrivateMessageRemoto(String nick, String mensaje) {
-        if (privateChats.containsKey(nick)) {
-            // Si ya hay chat abierto, solo lo mostramos y añadimos el mensaje
-            privateChats.get(nick).toFront();
+        if (privateChats.containsKey(nick.toLowerCase())) {
+            privateChats.get(nick.toLowerCase()).toFront();
             appendPrivateMessage(nick, mensaje, false);
         } else {
-            // Solo si no hay chat abierto, mostramos la solicitud
             mostrarSolicitudPrivado(nick, mensaje);
         }
     }
-
     
     // ------------------ CONEXIÓN IRC ------------------
-
- // 📄 java_irc_chat_client/ChatController.java
-
     public void connectToIRC() {
         if (isConnected) {
             appendSystemMessage("ℹ️ Ya estás conectado al servidor");
@@ -544,43 +641,25 @@ public class ChatController {
             try {
                 appendSystemMessage("🔹 Paso 1: Iniciando conexión al servidor IRC...");
 
-                // 1. INICIALIZAR BOT
-                // El constructor de ChatBot ahora maneja setLogin, setFinger/setRealName, etc.
                 ChatBot newBot = new ChatBot(this, NICKNAME);
-
-                // 2. CONFIGURACIÓN DEL BOT (API de PircBot 1.5.0)
-                // ❌ ELIMINAR ESTAS LÍNEAS. YA ESTÁN EN EL CONSTRUCTOR DE ChatBot.
-                // newBot.setLogin(NICKNAME);
-                // newBot.setRealName("JIRCHAT"); 
-                // newBot.setAutoNickChange(true);
                 
-                // ⭐ CRÍTICO: CONFIGURACIÓN DCC ELIMINADA (Ya hecho)
-                
-                // 3. ASIGNAR BOT A LA CLASE
                 bot = newBot; 
                 setBot(bot); 
                 
                 appendSystemMessage("🔹 Paso 2: Listeners configurados - conectando...");
                 appendSystemMessage("🔹 Conectando a " + SERVER + ":" + PORT + "...");
                 
-                
-
-                // 4. CONECTAR (API de PircBot 1.5.0)
                 bot.connect(SERVER, PORT); 
                 isConnected = true; 
 
             } catch (Exception e) {
-                e.printStackTrace(); 
-                // ... (manejo de errores)
+                Platform.runLater(() -> handleConnectionError(e));
+                log.error("Error fatal de conexión.", e);
             }
         }).start();
     }
     
 
-    
-   // ------------------ UTILIDAD DE RED (Simplificado) ------------------
-    
-    // ⭐ ELIMINADO: Ya no necesitamos la IP pública para DCC, solo la local como fallback
     private InetAddress getPublicIPAddress() {
         try {
             return InetAddress.getLocalHost();
@@ -592,44 +671,27 @@ public class ChatController {
 
 
     private void handleConnectionError(Exception e) {
-        String errorMsg = e.getMessage().toLowerCase();
+        String errorMsg = e.getMessage() != null ? e.getMessage().toLowerCase() : "Error desconocido";
         
         if (errorMsg.contains("connection refused") || errorMsg.contains("connect timed out")) {
             appendSystemMessage("💡 El servidor no está disponible o rechazó la conexión.");
-            appendSystemMessage("💡 Verifica que '" + SERVER + "' esté online.");
         } else if (errorMsg.contains("unknownhost")) {
             appendSystemMessage("💡 Servidor no encontrado: '" + SERVER + "'");
-            appendSystemMessage("💡 Verifica el nombre del servidor o tu conexión a Internet.");
         } else if (errorMsg.contains("ssl") || errorMsg.contains("handshake")) {
-            appendSystemMessage("💡 Error SSL. Prueba estas opciones:");
-            appendSystemMessage("💡 1. Usar puerto 6667 (sin SSL)");
-            appendSystemMessage("💡 2. Verificar certificados del servidor");
+            appendSystemMessage("💡 Error SSL.");
         } else if (errorMsg.contains("timeout")) {
-            appendSystemMessage("💡 Timeout de conexión. El servidor no respondió.");
-            appendSystemMessage("💡 Puede estar caído o sobrecargado.");
+            appendSystemMessage("💡 Timeout de conexión.");
         } else {
             appendSystemMessage("💡 Error desconocido. Revisa los logs para más detalles.");
         }
         
-        appendSystemMessage("🔍 Servidores alternativos para probar:");
-        appendSystemMessage("   - irc.libera.chat:6697 (SSL)");
-        appendSystemMessage("   - irc.efnet.org:6667 (sin SSL)");
+        appendSystemMessage("🔍 Conexión fallida. Intenta nuevamente.");
     }
 
-    // ------------------ CANALES ------------------
+    // ------------------ CANALES (AUXILIARES) ------------------
     
-    
-
-    public void cerrarCanalDesdeVentana(String canal) {
-        CanalVentana ventana = canalesAbiertos.remove(canal);
-        if (ventana != null) Platform.runLater(() -> ventana.stage.close());
-        Button btn = canalButtons.remove(canal);
-        if (btn != null && leftPane != null) Platform.runLater(() -> leftPane.getChildren().remove(btn));
-        floatingWindows.remove(ventana.stage);
-    }
-
     public void actualizarUsuariosCanal(String canal, List<String> usuarios) {
-        CanalVentana ventana = canalesAbiertos.get(canal);
+        CanalVentana ventana = canalesAbiertos.get(canal.toLowerCase());
         if (ventana != null) ventana.controller.updateUsers(usuarios);
     }
 
@@ -651,7 +713,7 @@ public class ChatController {
     }
 
     private void repositionFloatingWindows() {
-        if (rightPane == null) return;
+        if (rightPane == null || rightPane.getScene() == null) return;
         Window mainWin = rightPane.getScene().getWindow();
         if (mainWin == null) return;
 
@@ -669,11 +731,16 @@ public class ChatController {
     }
 
     public void bindFloatingWindowsToRightPane(Stage primaryStage) {
+        this.stagePrincipal = primaryStage;
         if (primaryStage == null) return;
 
         primaryStage.setOnCloseRequest(event -> {
             for (Stage s : new ArrayList<>(floatingWindows)) Platform.runLater(s::close);
             for (Stage s : privateChats.values()) Platform.runLater(s::close);
+            for (DccWindowWrapper w : dccAbiertos.values()) Platform.runLater(w.stage::close);
+            
+            // Llama a cerrarTodo para gestionar el bot/conexión
+            cerrarTodo("Cerrando cliente"); 
         });
 
         primaryStage.widthProperty().addListener((obs, oldV, newV) -> scheduleResize());
@@ -684,14 +751,27 @@ public class ChatController {
         resizePause.playFromStart();
         repositionFloatingWindows();
     }
+    
+ // En ChatController.java
+
+    
 
     // ------------------ CERRAR TODO (Sin cambios) ------------------
     public void cerrarTodo(String mensaje) {
+        // Aseguramos que la Stage principal se cierre solo si está visible
+        Platform.runLater(() -> {
+            if (stagePrincipal != null) stagePrincipal.close();
+        });
+        
         for (String canal : new ArrayList<>(canalesAbiertos.keySet()))
             cerrarCanalDesdeVentana(canal);
 
         for (String nick : new ArrayList<>(privateChats.keySet()))
             cerrarPrivado(nick);
+            
+        // Limpiamos DCC
+        for (String nick : new ArrayList<>(dccAbiertos.keySet()))
+            removerBotonDcc(nick);
 
         if (bot != null) {
             try {
@@ -703,6 +783,5 @@ public class ChatController {
 
         Platform.exit();
     }
-    
     
 }

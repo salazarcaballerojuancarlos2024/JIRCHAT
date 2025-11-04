@@ -32,6 +32,7 @@ public class DccTransferController {
     private ChatBot bot;
     private ChatController mainController; 
     private Stage stage;
+    private String senderNick;
 
     // --- Inicialización ---
 
@@ -41,6 +42,7 @@ public class DccTransferController {
         this.mainController = mainController;
         this.stage = stage;
 
+        this.senderNick = senderNick;
         String fileName = transfer.getFile().getName();
         long fileSize = transfer.getSize();
         
@@ -121,12 +123,32 @@ public class DccTransferController {
 
     @FXML
     private void handleDeny() {
-      transfer.close();
-      mainController.appendSystemMessage("🚫 Solicitud DCC rechazada para el archivo: " + transfer.getFile().getName());
-      stage.close();
+        // 1. Cerrar la transferencia DCC
+        if (transfer != null) {
+            transfer.close();
+        }
+        
+        // 2. Notificar a la consola principal
+        mainController.appendSystemMessage("🚫 Solicitud DCC rechazada para el archivo: " + transfer.getFile().getName());
+        
+        // 3. ⭐ ACCIÓN CRÍTICA: Eliminar el botón del leftPane y limpiar mapas.
+        // Usamos Platform.runLater por seguridad, aunque esta acción debe ocurrir en el hilo FX.
+        Platform.runLater(() -> {
+            if (mainController != null && senderNick != null) {
+                // Llama a la función de limpieza central del ChatController
+                mainController.removerBotonDcc(senderNick); 
+            }
+            
+            // 4. Cerrar la propia ventana DCC (stage)
+            if (stage != null) {
+                stage.close();
+            }
+        });
     }
 
     
+
+ // Dentro de DccTransferController.java
 
     private void startDccProgressMonitor() {
         
@@ -146,12 +168,22 @@ public class DccTransferController {
         
         // 3. Cierre inmediato del popup (100 ms para permitir la actualización de la UI)
         new java.util.Timer().schedule(new java.util.TimerTask() {
-            @Override public void run() { 
-                Platform.runLater(() -> stage.close()); 
+            @Override 
+            public void run() { 
+                Platform.runLater(() -> {
+                    
+                    // ⭐ ACCIÓN CLAVE: Eliminar el botón DCC del leftPane
+                    if (mainController != null && senderNick != null) {
+                        mainController.removerBotonDcc(senderNick); 
+                    }
+                    
+                    // Cerrar la ventana Stage
+                    if (stage != null) {
+                        stage.close();
+                    }
+                }); 
             }
         }, 100); 
-        
-        
     }
 }
 

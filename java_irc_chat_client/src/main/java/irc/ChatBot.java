@@ -23,6 +23,8 @@ import java_irc_chat_client.ChatController;
 import javafx.application.Platform;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
+import java.io.IOException;
+import org.slf4j.Logger;
 
 
 /**
@@ -39,10 +41,11 @@ public class ChatBot extends PircBot {
     private boolean isListingChannels = false;
     private final Set<String> joinedChannels = Collections.synchronizedSet(new HashSet<>());
     private final Map<String, CanalController> messageDelegates = new ConcurrentHashMap<>();
+    private static final java.util.Set<String> CANALES_AUTO_JOIN_EXCLUIDOS = java.util.Set.of("#chat", "#tester");
     
     // ⭐ El Nickname debe coincidir con el utilizado en onServerResponse para el parseo
-    private static final String NICKNAME = "Takkiles4321";
-    //private static final String NICKNAME = "Sakkiles4321";
+    //private static final String NICKNAME = "akkiles4321";
+    private static final String NICKNAME = "Sakkiles4321";
     
     // ⭐ DCC: Mapa para guardar el callback de progreso para CADA NICK (Lado Emisor)
     private final Map<String, BiConsumer<Long, Long>> dccProgressConsumers = new HashMap<>();
@@ -402,6 +405,8 @@ public class ChatBot extends PircBot {
     // EVENTOS DE CANAL Y USUARIO
     // ==========================================================
 
+    
+
     @Override
     protected void onJoin(String channel, String sender, String login, String hostname) {
         // Normalizar el nombre del canal para asegurar la consistencia con las claves del mapa.
@@ -415,22 +420,27 @@ public class ChatBot extends PircBot {
         // Lógica para cuando TU PROPIO BOT se une al canal (sender == getNick())
         // ----------------------------------------------------------------------------------
         if (sender.equalsIgnoreCase(getNick())) {
-            log.debug("Propio JOIN: Notificando entrada, registrando unión y solicitando NAMES.");
+            log.debug("Propio JOIN: Registrando unión y solicitando NAMES (sin afectar UI).");
             
-            // 1. Registrar el estado de unión (asumiendo que 'joinedChannels' existe en ChatBot)
-            // Esto es vital para saber si el bot está realmente en el canal.
+            // 1. Registrar el estado de unión
+            // Esto es CLAVE: permite a ChatController saber que el bot está unido.
             joinedChannels.add(lowercaseChannel); 
             
-            // 2. Notificar al usuario principal y forzar la aparición en la lista.
-            mainController.appendSystemMessage("🚪 Has entrado al canal " + channel + ".");
-            
             Platform.runLater(() -> {
-                // Fuerza la adición del canal a la lista visible de canales DISPONIBLES (TableView).
+                // ⭐ IMPORTANTE: NO se llama a mainController.agregarCanalAbierto(channel).
+                // Esto evita que los canales de autounión (#chat, #tester, etc.) abran su ventana y creen el botón al inicio.
+                
+                // Si el usuario ya había abierto la ventana (ej. por /join que llama a agregarCanalAbierto antes), 
+                // no pasa nada, la ventana ya existe y tiene su botón.
+
+                // 2. Notificar al usuario principal (solo en la consola de estado)
+                mainController.appendSystemMessage("🚪 Has entrado al canal " + channel + ".");
+                
+                // 3. Forzar la adición del canal a la lista visible de canales disponibles (TableView), si aplica.
                 mainController.forzarCanalUnidoEnLista(channel);
             });
 
-            // 3. ⭐ CRÍTICO: Solicitar la lista de usuarios inmediatamente.
-            // Esto asegura que, si la ventana se abre más tarde, los datos NAMES están disponibles.
+            // 4. Solicitar la lista de usuarios inmediatamente.
             this.sendRawLine("NAMES " + channel); 
             log.debug("Enviado NAMES después del JOIN del propio bot en {}", channel);
         } 
@@ -439,7 +449,7 @@ public class ChatBot extends PircBot {
         // Lógica para OTROS usuarios que se unen (actualiza lista y contador)
         // ----------------------------------------------------------------------------------
         else if (ventanaWrapper != null) {
-            // Esta lógica solo se ejecuta si la ventana fue abierta previamente.
+            // Esta lógica solo se ejecuta si la ventana fue abierta previamente por el usuario.
             Platform.runLater(() -> {
                 // 1. Notificar la unión en la ventana de chat
                 ventanaWrapper.controller.appendSystemMessage(
@@ -448,14 +458,15 @@ public class ChatBot extends PircBot {
                     sender
                 );
                 
-                // 2. ⭐ CRÍTICO: Agregar el nuevo usuario a la lista local y actualizar el contador.
-                // Necesitas que 'addUserToList(String)' esté implementado en CanalController.
+                // 2. Agregar el nuevo usuario a la lista local y actualizar el contador.
+                // Asegúrate de que 'addUserToList(String)' esté implementado en CanalController.
                 ventanaWrapper.controller.addUserToList(sender);
                 
                 log.debug("Usuario {} añadido localmente después de JOIN en {}", sender, channel);
             });
         }
     }
+    
     @Override
     protected void onUserList(String channel, org.jibble.pircbot.User[] users) {
         log.debug("Event: onUserList recibido para {}. Total de usuarios: {}", channel, users.length);
@@ -480,18 +491,22 @@ public class ChatBot extends PircBot {
         log.debug("Event: onPart. Canal: {}, Usuario: {}", channel, sender);
         
         // Obtener la ventana si está abierta
-        CanalVentana ventanaWrapper = mainController.getCanalesAbiertos().get(channel);
+        CanalVentana ventanaWrapper = mainController.getCanalesAbiertos().get(lowercaseChannel);
         
         // Lógica para cuando TU PROPIO BOT sale (sender.equals(getNick()))
         if (sender.equalsIgnoreCase(getNick())) {
             log.debug("Propio PART: Cerrando ventana de canal y eliminando de rastreador.");
             
-            // ⭐ 1. ACTUALIZAR ESTADO: Eliminar el canal del rastreador de uniones.
-            // Asume que tienes el Set<String> joinedChannels en ChatBot.
+            // ⭐ NUEVA LÍNEA: 1. Remover el botón del leftPane AHORA.
+            // Asumiendo que el método removerBotonCanal está en ChatController.
+            mainController.removerBotonCanal(channel); 
+            
+            // 2. ACTUALIZAR ESTADO: Eliminar el canal del rastreador de uniones.
             joinedChannels.remove(lowercaseChannel); 
 
-            // 2. Cerrar la ventana y notificar
-            mainController.cerrarCanalDesdeVentana(channel);
+            // 3. Cerrar la ventana y notificar
+            // Nota: cerrarCanalDesdeVentana solo elimina la referencia del mapa y cierra la Stage.
+            mainController.cerrarCanalDesdeVentana(channel); 
             mainController.appendSystemMessage("« Has salido del canal " + channel);
             
         // Lógica para cuando otro usuario sale (¡EFICIENTE!)
@@ -507,8 +522,7 @@ public class ChatBot extends PircBot {
                     sender
                 );
                 
-                // ⭐ 2. CORRECCIÓN CLAVE: Notificar al controlador que elimine al usuario
-                // Necesitas implementar este nuevo método en CanalController.
+                // 2. Notificar al controlador que elimine al usuario
                 ventanaWrapper.controller.removeUserFromList(sender);
                 
                 log.debug("Notificando remoción de usuario {} después de PART en {}", sender, channel);
