@@ -1,0 +1,5 @@
+/nick El_ArWen		
+/login El_ArWen Mirrorespejo2024###
+/msg nick identify El_ArWen Mirrorespejo2024### 
+/mode El_ArWen -Tc
+/mode El_ArWen +iI

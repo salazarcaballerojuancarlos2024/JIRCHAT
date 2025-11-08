@@ -290,37 +290,62 @@ public class ChatBot extends PircBot {
     // EVENTOS DE CONEXIÓN Y DESCONEXIÓN
     // ==========================================================
 
+ // Dentro de ChatBot.java
+
     @Override
     protected void onConnect() {
         log.debug("Event: onConnect disparado.");
         mainController.setConnected(true);
         log.info("✅ Conexión IRC establecida con {}", getServer());
         
+        // 1. Actualizar la UI inmediatamente
         Platform.runLater(() -> {
             mainController.getInputField().setDisable(false);
             mainController.appendSystemMessage("✅ Conectado al servidor: " + getServer());
         });
 
-        // Identificación con NickServ
-        String password = mainController.getPassword();
-        if (password != null && !password.isEmpty()) {
-            this.sendMessage("NickServ", "IDENTIFY " + (password.length() > 5 ? password.substring(0, 5) + "..." : password));
-            log.debug("🔐 Enviando comando IDENTIFY a NickServ.");
-        }
-
-        // Unirse a canales automáticamente (después de una pequeña pausa)
+        // 2. Rutina de comandos y auto-join en un hilo separado
         new Thread(() -> {
             try {
-                Thread.sleep(2000); 
+                // Pausa inicial para permitir que el servidor termine de procesar el registro (NICK/USER)
+                Thread.sleep(1000); 
+
+                // 2a. Identificación con NickServ
+                String password = mainController.getPassword();
+                if (password != null && !password.isEmpty()) {
+                    // Siempre envía el comando NickServ primero
+                    this.sendMessage("NickServ", "IDENTIFY " + (password.length() > 5 ? password.substring(0, 5) + "..." : password));
+                    log.debug("🔐 Enviando comando IDENTIFY a NickServ.");
+                    
+                    // Pausa adicional para que NickServ responda (es buena práctica)
+                    Thread.sleep(1500); 
+                }
+
+                // 2b. Ejecutar la Secuencia de Inicio (si está marcada)
+                // Asumiendo que ChatController tiene el getter y el método ejecutarSecuenciaInicio(boolean)
+                if (mainController.isSecuenciaInicioActivada()) {
+                    // El método ejecutarSecuenciaInicio() dentro de ChatController se encarga de leer el archivo
+                    // y usar bot.sendRawLine() para enviar los comandos al servidor.
+                    mainController.ejecutarSecuenciaInicio(true);
+                    
+                    // Pausa para que se ejecuten los comandos de la secuencia (como /join si están ahí)
+                    Thread.sleep(1000);
+                }
+
+                // 2c. Unión a canales automáticos (solo si no se hizo ya en la secuencia de inicio)
+                // Si la secuencia de inicio ya maneja los JOINs, puedes comentar o eliminar esta sección.
+                // Si quieres asegurarte de que #tester y #chat se unan siempre:
                 String[] canales = {"#tester", "#chat"};
-                log.debug("Iniciando rutina de auto-join a canales.");
+                log.debug("Iniciando rutina de auto-join a canales predeterminados.");
                 for (String canal : canales) {
+                    // Nota: Usamos joinChannel() de PircBot, que maneja la sintaxis correcta.
                     this.joinChannel(canal);
                     log.debug("🔹 Enviado JOIN para canal: {}", canal);
                 }
+                
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                log.warn("⏹️ Hilo de unión a canales interrumpido");
+                log.warn("⏹️ Hilo de rutina de inicio interrumpido");
             }
         }).start();
     }

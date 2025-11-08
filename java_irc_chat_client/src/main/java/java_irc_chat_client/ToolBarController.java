@@ -1,6 +1,8 @@
 package java_irc_chat_client;
 
 import javafx.event.ActionEvent;
+
+
 import java.io.IOException;
 
 // ELIMINADO: import dcc.TransferManager; 
@@ -15,6 +17,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
+import javafx.stage.Window;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 
@@ -169,9 +172,88 @@ public class ToolBarController {
         }
     }
 
+ 
 
+    private void abrirVentanaConexionDesdeInicio() {
+        try {
+            // Cargar FXML
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("/java_irc_chat_client/JIRCHAT_CONEXION.fxml"));
+            Parent root = loader.load();
 
+            // Obtener el controlador de la ventana de conexión
+            ConexionController controller = loader.getController();
 
+            // ⭐ INYECCIÓN CRÍTICA: Dar al controlador de conexión acceso al ChatController
+            // Esto es NECESARIO para que el botón "Conectar" inicie la conexión real.
+            if (chatController == null) {
+                throw new IllegalStateException("El ChatController principal no ha sido inicializado.");
+            }
+            controller.setChatController(chatController); 
+
+            // Cargar los datos guardados en el formulario
+            controller.cargarFormulario(); 
+
+            // Crear la nueva ventana (Stage)
+            Stage stage = new Stage();
+            stage.setTitle("Conexión IRC");
+            stage.setScene(new Scene(root));
+            stage.setResizable(false); 
+            
+            // Determinar la Stage principal para establecerla como propietaria
+            Window primarySceneWindow = rightPane != null ? rightPane.getScene().getWindow() : null;
+            Stage primaryStage = (primarySceneWindow instanceof Stage) ? (Stage) primarySceneWindow : null;
+            
+            if (primaryStage != null) {
+                 stage.initOwner(primaryStage); 
+            }
+
+            // Bloquear la ventana principal hasta que se conecte o cierre
+            stage.initModality(Modality.APPLICATION_MODAL); 
+
+            // Registrar el guardado al cerrar la ventana (si el usuario cierra sin conectar)
+            stage.setOnCloseRequest(e -> {
+                try {
+                    controller.guardarFormulario(); 
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    Alert alert = new Alert(Alert.AlertType.ERROR,
+                            "Error guardando formulario al cerrar: " + ex.getMessage(),
+                            ButtonType.OK);
+                    alert.showAndWait();
+                }
+            });
+
+            // Mostrar la ventana
+            stage.show();
+            
+            // Centrar la ventana de conexión en la pantalla
+            if (primaryStage != null) {
+                stage.centerOnScreen();
+            }
+
+        } catch (IOException e) {
+            // Error al cargar el FXML (ruta incorrecta o problema de archivo)
+            e.printStackTrace();
+            Alert alert = new Alert(Alert.AlertType.ERROR,
+                    "Error al cargar la interfaz de conexión (FXML): " + e.getMessage(),
+                    ButtonType.OK);
+            alert.showAndWait();
+        } catch (IllegalStateException e) {
+             // Error de inicialización del ChatController
+             e.printStackTrace();
+             Alert alert = new Alert(Alert.AlertType.ERROR,
+                    "Error: " + e.getMessage(),
+                    ButtonType.OK);
+             alert.showAndWait();
+        } catch (Exception e) {
+            // Captura cualquier otra excepción general (ej. error al cargar formulario)
+            e.printStackTrace();
+            Alert alert = new Alert(Alert.AlertType.ERROR,
+                    "Error abriendo la ventana de conexión: " + e.getMessage(),
+                    ButtonType.OK);
+            alert.showAndWait();
+        }
+    }
 
     /**
      * Abre la ventana de chat y vincula las floating windows al primaryStage.
@@ -200,7 +282,8 @@ public class ToolBarController {
             currentFrontPane = statusPane;
 
             // Conectar al IRC (Aquí se crea el bot)
-            chatController.connectToIRC();
+            //chatController.connectToIRC();
+            abrirVentanaConexionDesdeInicio();
 
             // Crear botón Status en el leftPane
             if (leftPane != null) {

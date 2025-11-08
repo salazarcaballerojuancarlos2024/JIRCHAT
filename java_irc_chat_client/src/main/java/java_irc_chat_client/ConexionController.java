@@ -3,6 +3,7 @@ package java_irc_chat_client;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
+import javafx.stage.Stage;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.Alert.AlertType;
 import javafx.event.ActionEvent;
@@ -21,6 +22,8 @@ import jakarta.xml.bind.annotation.XmlElement;
 import jakarta.xml.bind.annotation.XmlElementWrapper;
 import jakarta.xml.bind.annotation.XmlRootElement;
 import jakarta.xml.bind.annotation.XmlTransient;
+import java.awt.Desktop;
+import java.io.IOException;
 
 public class ConexionController {
 
@@ -34,53 +37,116 @@ public class ConexionController {
     @FXML private TableColumn<AutoConectorItem, Boolean> colOn;
     @FXML private TableColumn<AutoConectorItem, String> colServidor;
     @FXML private TableColumn<AutoConectorItem, String> colNick;
+    @FXML private Button btnEditIdentd;
 
     private final File configDir = new File(System.getProperty("user.home"), ".ircclient");
     private  File fileFormulario = new File(configDir, "FormularioConexion.xml");
     private final File fileZonas = new File(configDir, "Zonas_Servidores_IRC.xml");
 
     private Formulario formulario;
+    private final File fileSecuenciaInicio = new File(configDir, "secuenciadeinicio.txt");
+    // Ruta DENTRO del JAR/Resources
+    private static final String RECURSO_SECUENCIA = "/java_irc_chat_client/secuenciadeinicio.txt";
     
-    
-
     @FXML
-    public void initialize() throws Exception {
-        if (!configDir.exists()) configDir.mkdirs();
-        copiarSiNoExiste("/java_irc_chat_client/FormularioConexion.xml", fileFormulario);
-        copiarSiNoExiste("/java_irc_chat_client/Zonas_Servidores_IRC.xml", fileZonas);
+    private void onEditIdentd() {
+        try {
+            // 1. Asegurar la existencia del archivo en el directorio de configuración
+            // Usamos la ruta del recurso interno (RECURSO_SECUENCIA) y el destino externo (fileSecuenciaInicio)
+            copiarSiNoExiste(RECURSO_SECUENCIA, fileSecuenciaInicio);
 
-        // Inicializar tabla AutoConector
-        colNumero.setCellValueFactory(new PropertyValueFactory<>("numero"));
-        colOn.setCellValueFactory(new PropertyValueFactory<>("on"));
-        colNick.setCellValueFactory(new PropertyValueFactory<>("nick"));
-        colServidor.setCellValueFactory(new PropertyValueFactory<>("servidor"));
-
-        // Cargar formulario y TreeViews
-        cargarFormulario();
-        cargarTreeViewDerechoYEIzquierdo();
-
-        // Listener TreeView izquierdo
-        serverTreeView.getSelectionModel().selectedItemProperty().addListener((obs, oldSel, newSel) -> {
-            if (newSel != null && newSel.isLeaf()) {
-                servidorField.setText(newSel.getValue());
+            // 2. Verificar disponibilidad de edición y abrir
+            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.EDIT)) {
+                
+                Desktop.getDesktop().edit(fileSecuenciaInicio);
+                
+                // Notificación (opcional, pero útil)
+                mostrarAlerta(AlertType.INFORMATION, "Editor Abierto", 
+                              "Archivo de secuencia abierto en el editor predeterminado.", 
+                              "Ruta del archivo editable: " + fileSecuenciaInicio.getAbsolutePath());
+                
+            } else {
+                mostrarAlerta(AlertType.ERROR, "Error de Sistema", 
+                              "La función de edición automática no está soportada.", 
+                              "Por favor, edita el archivo manualmente en la ruta: " + fileSecuenciaInicio.getAbsolutePath());
             }
-        });
-
-        // Listener TreeView derecho (AutoConector)
-        arbolDerecha.setOnMouseClicked(event -> {
-            if (event.getClickCount() == 2) {
-                TreeItem<String> selectedTreeItem = arbolDerecha.getSelectionModel().getSelectedItem();
-                if (selectedTreeItem != null && selectedTreeItem.isLeaf()) {
-                    String servidorSeleccionado = selectedTreeItem.getValue();
-                    AutoConectorItem filaSeleccionada = autoConectarTable.getSelectionModel().getSelectedItem();
-                    if (filaSeleccionada != null) {
-                        filaSeleccionada.setServidor(servidorSeleccionado);
-                        autoConectarTable.refresh();
-                    }
-                }
-            }
-        });
+        } catch (IOException e) {
+            e.printStackTrace();
+            mostrarAlerta(AlertType.ERROR, "Error de Archivo", 
+                          "Error al abrir o crear el archivo de secuencia.", 
+                          "Verifica los permisos de escritura.\nDetalle: " + e.getMessage());
+        } catch (Exception e) {
+            e.printStackTrace();
+            mostrarAlerta(AlertType.ERROR, "Error de Recurso", 
+                          "El recurso de inicio (" + RECURSO_SECUENCIA + ") no se pudo encontrar.", e.getMessage());
+        }
     }
+
+    // Auxiliar para mostrar alertas (asumo que tienes una función similar)
+    private void mostrarAlerta(AlertType type, String title, String header, String content) {
+        Alert alert = new Alert(type);
+        alert.setTitle(title);
+        alert.setHeaderText(header);
+        alert.setContentText(content);
+        alert.showAndWait();
+    }
+
+    // NOTA: Asegúrate de llamar a copiarSiNoExiste(..., fileSecuenciaInicio) también en initialize()
+    
+    @XmlTransient // Importante para que JAXB no intente serializarlo
+    private ChatController chatController;
+    
+    // ⭐ MÉTODO NUEVO: Setter para inyectar la dependencia
+    public void setChatController(ChatController chatController) {
+        this.chatController = chatController;
+    }
+    
+ // Asegúrate de que esta variable esté declarada en tu clase:
+ // private final File fileSecuenciaInicio = new File(configDir, "secuenciadeinicio.txt");
+
+ @FXML
+ public void initialize() throws Exception {
+     // 1. Crear directorio y asegurar la existencia de los archivos de configuración y datos.
+     if (!configDir.exists()) configDir.mkdirs();
+     
+     // ⭐ COPIA DE ARCHIVOS CRÍTICOS AL INICIO
+     copiarSiNoExiste("/java_irc_chat_client/FormularioConexion.xml", fileFormulario);
+     copiarSiNoExiste("/java_irc_chat_client/Zonas_Servidores_IRC.xml", fileZonas);
+     // ⭐ NUEVO: Aseguramos la existencia del archivo de secuencia de inicio en el disco.
+     copiarSiNoExiste("/java_irc_chat_client/secuenciadeinicio.txt", fileSecuenciaInicio); 
+
+     // 2. Inicializar la tabla AutoConector
+     colNumero.setCellValueFactory(new PropertyValueFactory<>("numero"));
+     colOn.setCellValueFactory(new PropertyValueFactory<>("on"));
+     colNick.setCellValueFactory(new PropertyValueFactory<>("nick"));
+     colServidor.setCellValueFactory(new PropertyValueFactory<>("servidor"));
+
+     // 3. Cargar datos del formulario y TreeViews
+     cargarFormulario();
+     cargarTreeViewDerechoYEIzquierdo();
+
+     // 4. Listener TreeView izquierdo (selección de servidor)
+     serverTreeView.getSelectionModel().selectedItemProperty().addListener((obs, oldSel, newSel) -> {
+         if (newSel != null && newSel.isLeaf()) {
+             servidorField.setText(newSel.getValue());
+         }
+     });
+
+     // 5. Listener TreeView derecho (doble clic para asignar servidor)
+     arbolDerecha.setOnMouseClicked(event -> {
+         if (event.getClickCount() == 2) {
+             TreeItem<String> selectedTreeItem = arbolDerecha.getSelectionModel().getSelectedItem();
+             if (selectedTreeItem != null && selectedTreeItem.isLeaf()) {
+                 String servidorSeleccionado = selectedTreeItem.getValue();
+                 AutoConectorItem filaSeleccionada = autoConectarTable.getSelectionModel().getSelectedItem();
+                 if (filaSeleccionada != null) {
+                     filaSeleccionada.setServidor(servidorSeleccionado);
+                     autoConectarTable.refresh();
+                 }
+             }
+         }
+     });
+ }
     
     public void setFileFormulario(File file) {
         this.fileFormulario = file;
@@ -89,7 +155,11 @@ public class ConexionController {
     private void copiarSiNoExiste(String recurso, File destino) throws Exception {
         if (!destino.exists()) {
             try (InputStream is = getClass().getResourceAsStream(recurso)) {
-                if (is == null) throw new Exception("Recurso no encontrado: " + recurso);
+                if (is == null) {
+                     // Esto indica que la ruta del recurso (RECURSO_SECUENCIA) es incorrecta.
+                     throw new Exception("Recurso no encontrado: " + recurso);
+                }
+                // Copia el stream del recurso a la ruta física del usuario
                 Files.copy(is, destino.toPath(), StandardCopyOption.REPLACE_EXISTING);
             }
         }
@@ -277,19 +347,43 @@ public class ConexionController {
     }
 
 
+ // Dentro de ConexionController.java
+
     @FXML
     private void onConectar(ActionEvent event) {
-        if (servidorField.getText().isEmpty() || nickField.getText().isEmpty()) {
-            Alert alert = new Alert(AlertType.WARNING, "Servidor o nick no pueden estar vacíos", ButtonType.OK);
+        String servidor = servidorField.getText().trim();
+        String nick = nickField.getText().trim();
+
+        if (servidor.isEmpty() || nick.isEmpty()) {
+            Alert alert = new Alert(AlertType.WARNING, "Servidor o nick no pueden estar vacíos.", ButtonType.OK);
             alert.showAndWait();
             return;
         }
 
         try {
+            // 1. Guardar la configuración ingresada por el usuario
             guardarFormulario();
+            
+            // 2. ⭐ ACCIÓN CLAVE: Pasar los valores al ChatController
+            if (chatController != null) {
+                chatController.setserver(servidor);
+                chatController.setnickname(nick);
+                
+                // 3. Inicia la conexión real (usará los valores recién seteados)
+                chatController.connectToIRC();
+                
+                // 4. Cerrar la ventana de conexión
+                Stage stage = (Stage) ((Button) event.getSource()).getScene().getWindow();
+                stage.close();
+            } else {
+                // Manejo de error si la inyección falló
+                Alert alert = new Alert(AlertType.ERROR, "Error interno: El controlador principal no está disponible.", ButtonType.OK);
+                alert.showAndWait();
+            }
+
         } catch (Exception e) {
             e.printStackTrace();
-            Alert alert = new Alert(AlertType.ERROR, "Error guardando configuración: " + e.getMessage(), ButtonType.OK);
+            Alert alert = new Alert(AlertType.ERROR, "Error al guardar configuración o conectar: " + e.getMessage(), ButtonType.OK);
             alert.showAndWait();
         }
     }

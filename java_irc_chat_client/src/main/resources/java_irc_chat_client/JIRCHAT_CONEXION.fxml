@@ -81,7 +81,7 @@
                                 <Label text="Identd:"/>
                                 <TextField fx:id="identdField" promptText="Identd"/>
                                 <CheckBox fx:id="chkSecuenciaInicio" text="Secuencia de Inicio"/>
-                                <Button fx:id="btnEditIdentd" text="Edit"/>
+                                <Button fx:id="btnEditIdentd" text="Edit" onAction="#onEditIdentd"/>
                             </VBox>
 
                             <!-- Tipo de Conexion -->

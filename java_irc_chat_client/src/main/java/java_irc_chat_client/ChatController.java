@@ -22,7 +22,9 @@ import javafx.stage.Window;
 import javafx.util.Duration;
 import org.jibble.pircbot.DccFileTransfer;
 import irc.CanalVentana;
-import irc.ChatBot; 
+import irc.ChatBot;
+
+import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -41,11 +43,12 @@ public class ChatController {
     
     
     
-    //private static final String NICKNAME = "akkiles4321";
-    private static final String NICKNAME = "Sakkiles4321";
-    private static final String SERVER = "irc.example.org";
+    //private static final String nickname = "akkiles4321";
+    //private static final String nickname = "Sakkiles4321";
+    //private static final String server = "irc.example.org";
     private static final int PORT = 6667; 
     private Stage stagePrincipal;
+    private final File fileSecuenciaInicio = new File(System.getProperty("user.home"), ".ircclient/secuenciadeinicio.txt");
 
     // Paneles
     private StackPane rightPane;
@@ -80,6 +83,67 @@ public class ChatController {
     private final Map<String, Boolean> solicitudPendiente = new HashMap<>();
     private final ObservableList<String> canalesUnidos = FXCollections.observableArrayList();
     private CanalesListController canalesListController;
+    
+    private String nickname;
+    private String server;
+    private boolean secuenciaInicioActivada = false;
+    
+    public void setSecuenciaInicioActivada(boolean activada) {
+        this.secuenciaInicioActivada = activada;
+    }
+
+    public boolean isSecuenciaInicioActivada() {
+        return secuenciaInicioActivada;
+    }
+    
+    public void ejecutarSecuenciaInicio(boolean chkMarcado) {
+        if (!chkMarcado || bot == null) {
+            return;
+        }
+
+        if (!fileSecuenciaInicio.exists()) {
+            appendSystemMessage("⚠ Archivo de secuencia de inicio no encontrado: " + fileSecuenciaInicio.getName());
+            return;
+        }
+
+        try (java.util.Scanner scanner = new java.util.Scanner(fileSecuenciaInicio)) {
+            appendSystemMessage("📜 Ejecutando secuencia de inicio...");
+            
+            while (scanner.hasNextLine()) {
+                String command = scanner.nextLine().trim();
+                if (!command.isEmpty() && !command.startsWith("#")) { // Ignorar líneas vacías y comentarios
+                    
+                    // ⭐ CLAVE: Enviar el comando directamente al bot (como si fuera un /comando)
+                    // Usamos el mismo método que procesa la entrada del usuario en el TextField principal.
+                    // Asumiendo que ese método es mainController.processUserInput(String command)
+                    
+                    // NOTA: Si no tienes un método unificado, tendrás que enviarlo directamente:
+                    bot.sendRawLine(command); 
+                    
+                    // Si usas el método unificado:
+                    // processUserInput(command); 
+                    
+                    appendSystemMessage("-> Enviado: " + command);
+                    
+                    // Opcional: Pausa para evitar flood (aunque PircBot suele manejar esto)
+                    // Thread.sleep(500); 
+                }
+            }
+            appendSystemMessage("✅ Secuencia de inicio finalizada.");
+        } catch (IOException e) {
+            e.printStackTrace();
+            appendSystemMessage("❌ Error al leer la secuencia de inicio: " + e.getMessage());
+        }
+    }
+
+    // MÉTODOS NUEVOS: Setters para recibir los datos del formulario.
+    public void setnickname(String nickname) {
+        this.nickname = nickname;
+    }
+
+    public void setserver(String server) {
+        this.server = server;
+    }
     
     // CLASE WRAPPER DCC
     public static class DccWindowWrapper {
@@ -641,15 +705,15 @@ public class ChatController {
             try {
                 appendSystemMessage("🔹 Paso 1: Iniciando conexión al servidor IRC...");
 
-                ChatBot newBot = new ChatBot(this, NICKNAME);
+                ChatBot newBot = new ChatBot(this, nickname);
                 
                 bot = newBot; 
                 setBot(bot); 
                 
                 appendSystemMessage("🔹 Paso 2: Listeners configurados - conectando...");
-                appendSystemMessage("🔹 Conectando a " + SERVER + ":" + PORT + "...");
+                appendSystemMessage("🔹 Conectando a " + server + ":" + PORT + "...");
                 
-                bot.connect(SERVER, PORT); 
+                bot.connect(server, PORT); 
                 isConnected = true; 
 
             } catch (Exception e) {
@@ -676,7 +740,7 @@ public class ChatController {
         if (errorMsg.contains("connection refused") || errorMsg.contains("connect timed out")) {
             appendSystemMessage("💡 El servidor no está disponible o rechazó la conexión.");
         } else if (errorMsg.contains("unknownhost")) {
-            appendSystemMessage("💡 Servidor no encontrado: '" + SERVER + "'");
+            appendSystemMessage("💡 Servidor no encontrado: '" + server + "'");
         } else if (errorMsg.contains("ssl") || errorMsg.contains("handshake")) {
             appendSystemMessage("💡 Error SSL.");
         } else if (errorMsg.contains("timeout")) {
@@ -776,7 +840,7 @@ public class ChatController {
         if (bot != null) {
             try {
                 if (bot.isConnected()) {
-                    bot.quitServer(mensaje != null ? mensaje : "Cerrando cliente");
+                    bot.quitServer(mensaje != null ? mensaje : "Cerrando cliente"); 
                 }
             } catch (Exception ignored) {}
         }
