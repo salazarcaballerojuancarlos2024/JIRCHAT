@@ -22,6 +22,7 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 
 
+
 public class ToolBarController {
 
     private StackPane rightPane;
@@ -135,7 +136,9 @@ public class ToolBarController {
 
             // Obtener el controlador de la ventana de conexión
             ConexionController controller = loader.getController();
-
+            
+            // Cargar el chatController en el objeto ConexionController
+            if(controller.comprobarChatController()) controller.setChatController(this.chatController);
             // Cargar los datos directamente desde el fichero físico
             controller.cargarFormulario(); 
 
@@ -200,6 +203,7 @@ public class ToolBarController {
             stage.setResizable(false); 
             
             // Determinar la Stage principal para establecerla como propietaria
+            // Esto mantiene la ventana de conexión sobre la ventana principal.
             Window primarySceneWindow = rightPane != null ? rightPane.getScene().getWindow() : null;
             Stage primaryStage = (primarySceneWindow instanceof Stage) ? (Stage) primarySceneWindow : null;
             
@@ -213,6 +217,7 @@ public class ToolBarController {
             // Registrar el guardado al cerrar la ventana (si el usuario cierra sin conectar)
             stage.setOnCloseRequest(e -> {
                 try {
+                    // Guardar la configuración actual (manual o auto-conector)
                     controller.guardarFormulario(); 
                 } catch (Exception ex) {
                     ex.printStackTrace();
@@ -242,7 +247,7 @@ public class ToolBarController {
              // Error de inicialización del ChatController
              e.printStackTrace();
              Alert alert = new Alert(Alert.AlertType.ERROR,
-                    "Error: " + e.getMessage(),
+                    "Error de dependencias: " + e.getMessage(),
                     ButtonType.OK);
              alert.showAndWait();
         } catch (Exception e) {

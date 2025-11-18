@@ -118,9 +118,9 @@
                             </TableView>
 
                             <HBox spacing="8" alignment="CENTER_LEFT">
-                                <Button fx:id="btnOnOff" text="On/Off"/>
-                                <Button fx:id="btnMas" text="+"/>
-                                <Button fx:id="btnMenos" text="-"/>
+                                <Button fx:id="btnOnOff" text="On/Off" onAction="#onOnOff"/>
+    							<Button fx:id="btnMas" text="+" onAction="#onMas"/>
+   								<Button fx:id="btnMenos" text="-" onAction="#onMenos"/>
                             </HBox>
 
                             

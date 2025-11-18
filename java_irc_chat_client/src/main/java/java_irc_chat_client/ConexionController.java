@@ -38,6 +38,9 @@ public class ConexionController {
     @FXML private TableColumn<AutoConectorItem, String> colServidor;
     @FXML private TableColumn<AutoConectorItem, String> colNick;
     @FXML private Button btnEditIdentd;
+    @FXML private Button btnMas;
+    @FXML private Button btnMenos;
+    @FXML private Button btnOnOff;
 
     private final File configDir = new File(System.getProperty("user.home"), ".ircclient");
     private  File fileFormulario = new File(configDir, "FormularioConexion.xml");
@@ -47,6 +50,119 @@ public class ConexionController {
     private final File fileSecuenciaInicio = new File(configDir, "secuenciadeinicio.txt");
     // Ruta DENTRO del JAR/Resources
     private static final String RECURSO_SECUENCIA = "/java_irc_chat_client/secuenciadeinicio.txt";
+    
+ 
+
+    @FXML
+    private void onMas() {
+        TreeItem<String> selectedTreeItem = arbolDerecha.getSelectionModel().getSelectedItem();
+
+        // 1. Verificar si se seleccionó un servidor en el TreeView de la derecha
+        if (selectedTreeItem == null || !selectedTreeItem.isLeaf()) {
+            mostrarAlerta(AlertType.WARNING, "Selección Requerida", 
+                          "Por favor, selecciona un servidor (una hoja del árbol) de la lista de Auto-Conector para añadirlo.", 
+                          null);
+            return;
+        }
+
+        String servidorSeleccionado = selectedTreeItem.getValue();
+
+        // 2. Abrir un diálogo para pedir el Nick
+        TextInputDialog dialog = new TextInputDialog(nickField.getText()); // Usar el nick actual como sugerencia
+        dialog.setTitle("Añadir Servidor a Auto-Conector");
+        dialog.setHeaderText("Servidor: " + servidorSeleccionado);
+        dialog.setContentText("Introduce el Nick a usar en este servidor:");
+
+        dialog.showAndWait().ifPresent(nick -> {
+            if (!nick.trim().isEmpty()) {
+                // 3. Crear y añadir la nueva fila al TableView
+                AutoConectorItem newItem = new AutoConectorItem();
+                newItem.setServidor(servidorSeleccionado);
+                newItem.setNick(nick.trim());
+                newItem.setOn(false); // Por defecto, la nueva fila no está activa
+
+                // Asignar número de fila
+                int nextNumber = autoConectarTable.getItems().size() + 1;
+                newItem.setNumero(nextNumber); 
+                
+                // Re-numerar todas las filas existentes
+                renumerarTabla();
+
+                autoConectarTable.getItems().add(newItem);
+                autoConectarTable.refresh();
+            } else {
+                mostrarAlerta(AlertType.WARNING, "Nick Requerido", 
+                              "El Nick no puede estar vacío.", null);
+            }
+        });
+    }
+    
+ // Dentro de ConexionController.java
+
+    @FXML
+    private void onMenos() {
+        AutoConectorItem selectedItem = autoConectarTable.getSelectionModel().getSelectedItem();
+
+        if (selectedItem == null) {
+            mostrarAlerta(AlertType.WARNING, "Selección Requerida", 
+                          "Por favor, selecciona la fila que deseas eliminar.", null);
+            return;
+        }
+
+        // Confirmación (opcional pero recomendado)
+        Alert alert = new Alert(AlertType.CONFIRMATION, 
+                                "¿Estás seguro de que quieres eliminar la fila para el servidor " + selectedItem.getServidor() + "?", 
+                                ButtonType.YES, ButtonType.NO);
+        alert.setTitle("Confirmar Eliminación");
+        alert.showAndWait().ifPresent(response -> {
+            if (response == ButtonType.YES) {
+                autoConectarTable.getItems().remove(selectedItem);
+                renumerarTabla(); // Re-numerar después de eliminar
+                autoConectarTable.refresh();
+            }
+        });
+    }
+    
+ // Dentro de ConexionController.java
+
+    @FXML
+    private void onOnOff() {
+        AutoConectorItem selectedItem = autoConectarTable.getSelectionModel().getSelectedItem();
+
+        if (selectedItem == null) {
+            mostrarAlerta(AlertType.WARNING, "Selección Requerida", 
+                          "Por favor, selecciona una fila para activarla/desactivarla.", null);
+            return;
+        }
+
+        boolean newState = !selectedItem.isOn(); // Alternar el estado actual
+
+        // Desactivar todas las demás filas
+        for (AutoConectorItem item : autoConectarTable.getItems()) {
+            item.setOn(false);
+        }
+
+        // Activar solo la fila seleccionada si el nuevo estado es 'true'
+        if (newState) {
+            selectedItem.setOn(true);
+            mostrarAlerta(AlertType.INFORMATION, "Servidor Activo", 
+                          "Servidor " + selectedItem.getServidor() + " seleccionado para la auto-conexión.", 
+                          null);
+        } else {
+            selectedItem.setOn(false);
+        }
+        
+        autoConectarTable.refresh();
+    }
+    
+ // Dentro de ConexionController.java
+
+    private void renumerarTabla() {
+        int i = 1;
+        for (AutoConectorItem item : autoConectarTable.getItems()) {
+            item.setNumero(i++);
+        }
+    }
     
     @FXML
     private void onEditIdentd() {
@@ -99,6 +215,14 @@ public class ConexionController {
     // ⭐ MÉTODO NUEVO: Setter para inyectar la dependencia
     public void setChatController(ChatController chatController) {
         this.chatController = chatController;
+    }
+    
+    public boolean comprobarChatController() {
+    	if(this.chatController == null) return true; else return false;
+    }
+    
+    public ChatController getChatController() {
+    	return this.chatController;
     }
     
  // Asegúrate de que esta variable esté declarada en tu clase:
@@ -347,13 +471,49 @@ public class ConexionController {
     }
 
 
+
  // Dentro de ConexionController.java
 
     @FXML
     private void onConectar(ActionEvent event) {
         String servidor = servidorField.getText().trim();
         String nick = nickField.getText().trim();
+        
+        // ⭐ LÓGICA DEL AUTO-CONECTOR (PRIORIDAD AL INICIO)
+        if (chkAutoConectar.isSelected()) {
+            AutoConectorItem itemActivo = null;
+            
+            // 1. Buscar la fila activa (colOn == true)
+            for (AutoConectorItem item : autoConectarTable.getItems()) {
+                if (item.isOn()) {
+                    itemActivo = item;
+                    break;
+                }
+            }
+            
+            if (itemActivo != null) {
+                // Sobrescribir los campos con los valores del Auto-Conector
+                servidor = itemActivo.getServidor().trim();
+                nick = itemActivo.getNick().trim();
+                
+                // Actualizar la UI de la Pestaña "Conectar" (opcional, pero útil)
+                servidorField.setText(servidor);
+                nickField.setText(nick);
 
+                mostrarAlerta(AlertType.INFORMATION, "Auto-Conexión", 
+                              "Usando configuración de Auto-Conector.", 
+                              "Servidor: " + servidor + ", Nick: " + nick);
+                              
+            } else {
+                // Advertencia si el auto-conector está activo pero ninguna fila está marcada
+                mostrarAlerta(AlertType.WARNING, "Auto-Conector", 
+                              "El Auto-conector está activo pero ninguna fila está marcada 'On'.", 
+                              "Se usará la configuración manual actual de la Pestaña 'Conectar'.");
+            }
+        }
+        // FIN LÓGICA DEL AUTO-CONECTOR
+
+        // 2. Validación final de los valores (ya sean manuales o de auto-conector)
         if (servidor.isEmpty() || nick.isEmpty()) {
             Alert alert = new Alert(AlertType.WARNING, "Servidor o nick no pueden estar vacíos.", ButtonType.OK);
             alert.showAndWait();
@@ -361,18 +521,23 @@ public class ConexionController {
         }
 
         try {
-            // 1. Guardar la configuración ingresada por el usuario
+            // 3. Guardar la configuración (incluyendo el estado de los checkboxes y la tabla)
             guardarFormulario();
             
-            // 2. ⭐ ACCIÓN CLAVE: Pasar los valores al ChatController
+            // 4. Iniciar Conexión
             if (chatController != null) {
-                chatController.setserver(servidor);
-                chatController.setnickname(nick);
                 
-                // 3. Inicia la conexión real (usará los valores recién seteados)
+                // A. Pasar los valores de Nick y Servidor al controlador principal
+                chatController.setServer(servidor);
+                chatController.setNickname(nick);
+                
+                // B. ⭐ NUEVO: Pasar el estado de Secuencia de Inicio al controlador principal
+                chatController.setSecuenciaInicioActivada(chkSecuenciaInicio.isSelected());
+                
+                // C. Inicia la conexión real (usará los valores recién seteados)
                 chatController.connectToIRC();
                 
-                // 4. Cerrar la ventana de conexión
+                // D. Cerrar la ventana de conexión
                 Stage stage = (Stage) ((Button) event.getSource()).getScene().getWindow();
                 stage.close();
             } else {

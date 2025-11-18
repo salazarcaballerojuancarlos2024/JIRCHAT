@@ -88,6 +88,14 @@ public class ChatController {
     private String server;
     private boolean secuenciaInicioActivada = false;
     
+    public void setServer(String server) {
+        this.server = server;
+    }
+
+    public void setNickname(String nickname) {
+        this.nickname = nickname;
+    }
+    
     public void setSecuenciaInicioActivada(boolean activada) {
         this.secuenciaInicioActivada = activada;
     }
@@ -533,12 +541,56 @@ public class ChatController {
         }
     }
     
+ // Dentro de ChatController.java
+
     private void handleCommand(String cmd) {
         try {
-            if (cmd.startsWith("join ")) agregarCanalAbierto(cmd.substring(5).trim());
-            else if (cmd.startsWith("quit")) cerrarTodo("Cerrando cliente");
-            else if (bot != null) bot.sendRawLine(cmd); 
-        } catch (Exception e) { appendSystemMessage("⚠ Error al ejecutar comando: " + e.getMessage()); }
+            if (cmd.startsWith("join ")) {
+                agregarCanalAbierto(cmd.substring(5).trim());
+            } else if (cmd.startsWith("quit")) {
+                // ⭐ CAMBIO CRÍTICO: Manejamos la desconexión sin cerrar la aplicación.
+                handleQuitOnly(cmd.substring(4).trim()); 
+                
+            } else if (bot != null) {
+                // Si no es join ni quit, lo enviamos crudo.
+                bot.sendRawLine(cmd); 
+            }
+        } catch (Exception e) { 
+            appendSystemMessage("⚠ Error al ejecutar comando: " + e.getMessage()); 
+        }
+    }
+ // Dentro de ChatController.java (Método Nuevo)
+
+    /**
+     * Desconecta el bot del servidor y limpia la UI relacionada con la conexión, 
+     * pero mantiene la aplicación principal abierta.
+     */
+    private void handleQuitOnly(String mensaje) {
+        if (bot != null && bot.isConnected()) {
+            
+            String quitMessage = mensaje.isEmpty() ? "Desconexión solicitada por el usuario" : mensaje;
+            
+            // 1. Desconectar el bot del servidor
+            bot.quitServer(quitMessage); 
+            
+            // 2. Limpiar la UI relacionada con los canales, privados y DCCs
+            // (La lógica es similar a cerrarTodo, pero sin cerrar la Stage principal)
+
+            for (String canal : new ArrayList<>(canalesAbiertos.keySet()))
+                cerrarCanalDesdeVentana(canal);
+
+            for (String nick : new ArrayList<>(privateChats.keySet()))
+                cerrarPrivado(nick);
+                
+            for (String nick : new ArrayList<>(dccAbiertos.keySet()))
+                removerBotonDcc(nick);
+
+            // La función onDisconnect() del ChatBot debería manejar la actualización final de la UI (deshabilitar inputField, etc.)
+            appendSystemMessage("🔌 Desconectado del servidor por comando /quit.");
+            
+        } else {
+            appendSystemMessage("⚠️ Ya estás desconectado. El comando /quit no tiene efecto.");
+        }
     }
 
     // ------------------ PRIVADO (AUXILIARES) ------------------
@@ -695,26 +747,64 @@ public class ChatController {
     }
     
     // ------------------ CONEXIÓN IRC ------------------
+ // Dentro de ChatController.java
+
+ // Dentro de ChatController.java (Asegúrate de que 'server' y 'nickname' sean variables de instancia)
+
     public void connectToIRC() {
+        // 1. Verificación: Si ya estamos conectados, no hacemos nada.
         if (isConnected) {
-            appendSystemMessage("ℹ️ Ya estás conectado al servidor");
+            appendSystemMessage("ℹ️ Ya estás conectado al servidor.");
             return;
         }
 
+        // 2. Validación de datos esenciales
+        if (server == null || server.trim().isEmpty() || nickname == null || nickname.trim().isEmpty()) {
+            Platform.runLater(() -> handleConnectionError(new Exception("Servidor o Nickname no configurados.")));
+            return;
+        }
+
+        // 3. ⭐ Solución: Declarar variables locales dentro del ámbito del método
+        // y no reasignarlas directamente, o usar variables intermedias.
+        final String serverToConnect = server; 
+        final String nickToUse = nickname;
+        
+        // 4. Lógica de Reconexión y Creación de ChatBot (en hilo separado)
         new Thread(() -> {
+            
+            // ⭐ Variables FINALES locales dentro del hilo
+            String finalHost = serverToConnect;
+            int finalPort = 6667; 
+            
+            // --- PARSEO DEL SERVIDOR DENTRO DEL HILO ---
+            if (serverToConnect.contains(":")) {
+                String[] parts = serverToConnect.split(":");
+                finalHost = parts[0]; // Se reasignan las variables locales del hilo
+                if (parts.length > 1) {
+                    try {
+                        finalPort = Integer.parseInt(parts[1]); // Se reasignan las variables locales del hilo
+                    } catch (NumberFormatException ignored) {
+                        // Si el puerto no es válido, se usa 6667 por defecto
+                    }
+                }
+            }
+            
             try {
                 appendSystemMessage("🔹 Paso 1: Iniciando conexión al servidor IRC...");
 
-                ChatBot newBot = new ChatBot(this, nickname);
+                // Usamos el constructor existente (controlador, nickname)
+                ChatBot newBot = new ChatBot(this, nickToUse);
                 
+                // Reemplazamos la referencia al bot
                 bot = newBot; 
-                setBot(bot); 
                 
                 appendSystemMessage("🔹 Paso 2: Listeners configurados - conectando...");
-                appendSystemMessage("🔹 Conectando a " + server + ":" + PORT + "...");
+                appendSystemMessage("🔹 Conectando a " + finalHost + ":" + finalPort + "...");
                 
-                bot.connect(server, PORT); 
-                isConnected = true; 
+                // 5. Conectar usando las variables FINALES
+                bot.connect(finalHost, finalPort); 
+                
+                // isConnected = true; (Debe establecerse en onConnect() del ChatBot)
 
             } catch (Exception e) {
                 Platform.runLater(() -> handleConnectionError(e));

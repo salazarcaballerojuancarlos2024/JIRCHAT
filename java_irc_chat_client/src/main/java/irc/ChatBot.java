@@ -362,6 +362,10 @@ public class ChatBot extends PircBot {
             mainController.appendSystemMessage("🔴 " + nick + " desconectado de " + server);
             mainController.getInputField().setDisable(true);
             mainController.setConnected(false);
+            
+            // ⭐ CÓDIGO CRÍTICO AÑADIDO:
+            // El ChatController debe anular la referencia al objeto ChatBot que acaba de morir.
+            mainController.setBot(null); // Asumiendo que tienes un setter llamado setBot.
         });
     }
 
