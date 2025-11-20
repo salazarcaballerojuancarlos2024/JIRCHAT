@@ -20,6 +20,8 @@ import java.util.function.BiConsumer;
 import java_irc_chat_client.Canal;
 import java_irc_chat_client.CanalController;
 import java_irc_chat_client.ChatController;
+import java_irc_chat_client.IRCUser;
+import java_irc_chat_client.LWhoController;
 import javafx.application.Platform;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
@@ -51,6 +53,20 @@ public class ChatBot extends PircBot {
     private final Map<String, BiConsumer<Long, Long>> dccProgressConsumers = new HashMap<>();
     
     private final Map<String, CanalController> namesDelegates = new ConcurrentHashMap<>();
+    
+    // Referencia al controlador que está esperando la respuesta WHO. 
+    // Usaremos un mapa simple si permitimos múltiples consultas WHO,
+    // pero por simplicidad, usaremos una sola referencia activa.
+ private LWhoController activeLWhoController; 
+
+ // Método para que LWhoController se registre y envíe la consulta
+ public void requestWhoList(String channel, LWhoController controller) {
+     if (!isConnected()) return;
+     this.activeLWhoController = controller; // Guardamos la referencia para callbacks
+     sendRawLine("WHO " + channel);
+ }
+    
+    
     
     public void registerMessageDelegate(String channel, CanalController controller) {
         messageDelegates.put(channel.toLowerCase(), controller);
@@ -592,146 +608,217 @@ public class ChatBot extends PircBot {
 
  
 
+ // Dentro de ChatBot.java
+
+ // Dentro de ChatBot.java
+
     @Override
     protected void onServerResponse(int code, String response) {
-        super.onServerResponse(code, response); 
-        // Usamos el log estándar para la respuesta, fuera de la condición de listado
+        super.onServerResponse(code, response);
+
+        // Usamos el log estándar para la respuesta
         log.debug("Event: onServerResponse. Código: {}, Respuesta: {}", code, response);
 
+        // ----------------------------------------------------------------------
+        //             MANEJO DE LISTADO DE CANALES (322, 323)
+        // ----------------------------------------------------------------------
 
-        if (!isListingChannels) return;
+        if (isListingChannels) {
+            if (code == 322) { // Respuesta LIST (RPL_LIST): Datos de un canal
+                log.debug("Procesando respuesta 322 (Canal LIST).");
 
-     
-        if (code == 322) { // Respuesta LIST (RPL_LIST): Datos de un canal
-            log.debug("Procesando respuesta 322 (Canal LIST).");
-            
-            System.out.println("------------------------------------------------------------------");
-            System.out.println(">>> RESPUESTA 322 COMPLETA (ORIGINAL): " + response); 
-            
-            try {
-                String channelName = "";
-                int userCount = 0;
-                String modos = "";
-                String topic = "";
-                
-                final String BOT_NICK = getNick(); // Usa getNick() para asegurar el nick actual
-                
-                // 1. Aislar la sección de datos que contiene [Canal] [Usuarios] [Modos] :[Tema]
-                int startOfDataIndex = response.indexOf(BOT_NICK);
-                if (startOfDataIndex == -1) {
-                    log.warn("Parseo 322 falló: No se pudo anclar al nick del bot.");
-                    return;
-                }
-                
-                // La sección de datos comienza después de 'nick '
-                String dataPart = response.substring(startOfDataIndex + BOT_NICK.length()).trim();
-                
-                // 2. Dividir para obtener los primeros campos fijos
-                // Limitamos a 4 para asegurarnos de que el resto (el topic) se queda unido
-                String[] tokens = dataPart.split(" ", 4); 
-                
-                // La respuesta esperada debe tener al menos: [Canal] [Usuarios] [Topic]
-                if (tokens.length < 3) {
-                    log.warn("Parseo 322 falló: Pocos tokens después del nick. Data: {}", dataPart);
-                    return;
-                }
-
-                // --- EXTRACCIÓN DE CAMPOS ---
-                
-                // 1. Nombre del Canal (tokens[0])
-                channelName = tokens[0];
-                
-                // 2. Número de Usuarios (tokens[1])
                 try {
-                    userCount = Integer.parseInt(tokens[1]);
-                } catch (NumberFormatException ignored) { }
-                
-                // 3. Tema/Descripción (siempre el último token disponible)
-                String lastToken = tokens[tokens.length - 1];
-                
-                if (lastToken.startsWith(":")) {
-                    topic = lastToken.substring(1).trim();
-                } else {
-                    topic = lastToken;
-                }
-                
-                // 4. Modos/Permisos
-                // Esto es lo más difícil: Puede ser tokens[2] o puede estar contenido en el tema.
-                if (tokens.length == 4) {
-                    // Si hay 4 tokens, tokens[2] es el modo.
-                    modos = tokens[2];
-                } else {
-                    // Si hay 3 tokens (solo Canal, Usuarios, Tema), los modos están vacíos.
-                    modos = "";
-                }
-                
-                // *CASO ESPECIAL DE UNREALIRCd*
-                // A veces, UnrealIRCd pone los modos en el tema (ej: :[+nt]).
-                if (modos.isEmpty() && topic.startsWith("[+") && topic.endsWith("]")) {
-                    modos = topic.substring(1, topic.length() - 1);
-                    topic = ""; // Si el tema solo era el modo, lo vaciamos.
-                }
+                    // ... (Lógica de parseo 322 existente, se mantiene sin cambios) ...
 
-                // *LIMPIEZA FINAL*
-                if (!modos.isEmpty() && !modos.startsWith("+")) {
-                     modos = "+" + modos;
-                }
-                
-                // ⭐⭐⭐ IMPRESIÓN DE TOKENS PARSEADOS ⭐⭐⭐
-                System.out.println("PARSING EXITOSO (FINAL):");
-                System.out.println("  Canal: " + channelName);
-                System.out.println("  Usuarios: " + userCount);
-                System.out.println("  Modos: " + modos);
-                System.out.println("  Descripción (Topic): " + (topic.length() > 60 ? topic.substring(0, 60) + "..." : topic)); 
-                System.out.println("------------------------------------------------------------------");
-                log.debug("Parseo 322: Canal={}, Usuarios={}, Modos={}, Topic={}", channelName, userCount, modos, topic);
+                    String channelName = "";
+                    int userCount = 0;
+                    String modos = "";
+                    String topic = "";
 
-                // 5. Crear y enviar el objeto Canal
-                Canal canal = new Canal(channelName, userCount, modos, topic);
-                
-                if (currentListReceiver != null && channelName.startsWith("#")) {
-                    currentListReceiver.accept(canal);
-                    log.debug("Parseo 322: Enviando objeto Canal al receptor.");
+                    final String BOT_NICK = getNick();
+                    int startOfDataIndex = response.indexOf(BOT_NICK);
+                    if (startOfDataIndex == -1) {
+                        log.warn("Parseo 322 falló: No se pudo anclar al nick del bot.");
+                        return;
+                    }
+
+                    String dataPart = response.substring(startOfDataIndex + BOT_NICK.length()).trim();
+                    String[] tokens = dataPart.split(" ", 4);
+
+                    if (tokens.length < 3) {
+                        log.warn("Parseo 322 falló: Pocos tokens después del nick. Data: {}", dataPart);
+                        return;
+                    }
+
+                    channelName = tokens[0];
+                    try {
+                        userCount = Integer.parseInt(tokens[1]);
+                    } catch (NumberFormatException ignored) { }
+
+                    String lastToken = tokens[tokens.length - 1];
+
+                    if (lastToken.startsWith(":")) {
+                        topic = lastToken.substring(1).trim();
+                    } else {
+                        topic = lastToken;
+                    }
+
+                    if (tokens.length == 4) {
+                        modos = tokens[2];
+                    } else {
+                        modos = "";
+                    }
+
+                    // Caso especial de UnrealIRCd para modos en el tema
+                    if (modos.isEmpty() && topic.startsWith("[+") && topic.endsWith("]")) {
+                        modos = topic.substring(1, topic.length() - 1);
+                        topic = "";
+                    }
+
+                    if (!modos.isEmpty() && !modos.startsWith("+")) {
+                         modos = "+" + modos;
+                    }
+
+                    log.debug("Parseo 322: Canal={}, Usuarios={}, Modos={}, Topic={}", channelName, userCount, modos, topic);
+
+                    Canal canal = new Canal(channelName, userCount, modos, topic);
+
+                    // ⭐ CLAVE: Platform.runLater para enviar datos al receptor (UI)
+                    if (currentListReceiver != null && channelName.startsWith("#")) {
+                        Platform.runLater(() -> {
+                            currentListReceiver.accept(canal);
+                            log.debug("Parseo 322: Enviando objeto Canal al receptor.");
+                        });
+                    }
+
+                } catch (Exception e) {
+                    log.error("Error FATAL al parsear respuesta 322: {}", response, e);
                 }
+                return; // Salir después de procesar LIST
+            }  else if (code == 323) { // Fin de lista
+                log.debug("Procesando respuesta 323 (Fin de Canal LIST).");
+                this.isListingChannels = false;
                 
-            } catch (Exception e) {
-                System.err.println("Error FATAL al parsear respuesta 322: " + response + " (" + e.getMessage() + ")");
-                e.printStackTrace(); 
-                log.error("Error FATAL al parsear respuesta 322.", e);
+                // Capturamos las referencias locales antes de la limpieza final
+                final Runnable endCallback = this.currentListEndCallback;
+                
+                // ⭐ CLAVE: Envolvemos el fin de consulta y la limpieza DENTRO del Platform.runLater.
+                // Esto garantiza que la limpieza (poniendo a null) se haga en el hilo FX,
+                // *después* de que todos los 322 pendientes en la cola hayan tenido la oportunidad de ejecutarse.
+                Platform.runLater(() -> {
+                    if (endCallback != null) {
+                        endCallback.run();
+                        log.debug("Ejecutando callback de fin de lista en hilo FX.");
+                    }
+                    
+                    // ⭐⭐ CORRECCIÓN: Limpieza final dentro del hilo FX ⭐⭐
+                    this.currentListReceiver = null;
+                    this.currentListEndCallback = null;
+                });
+
+                return; // Salir después de procesar LIST
             }
-        }  else if (code == 323) { // Fin de lista
-            log.debug("Procesando respuesta 323 (Fin de Canal LIST).");
-            this.isListingChannels = false;
-            if (currentListEndCallback != null) {
-                currentListEndCallback.run();
-                log.debug("Ejecutando callback de fin de lista.");
-            }
-            this.currentListReceiver = null;
-            this.currentListEndCallback = null;
-            
-            System.out.println("⭐ Fin de la lista de canales (323).");
         }
-        
+
+        // ----------------------------------------------------------------------
+        //               MANEJO DE CONSULTA WHO (352, 315)
+        // ----------------------------------------------------------------------
+
+        if (activeLWhoController != null) {
+            if (code == 352) {
+                log.debug("Procesando respuesta 352 (WHO Reply).");
+                try {
+
+                    String[] tokens = response.split(" ");
+
+                    if (tokens.length < 7) {
+                        log.warn("Parseo 352 falló: Pocos tokens para WHO reply. Longitud: {}", tokens.length);
+                        return;
+                    }
+
+                    // --- Mapeo de Índices (Basado en tu última salida RAW) ---
+                    // [0] El_ArWen, [1] #canal, [2] ident, [3] host, [4] server, [5] nick, [6] flags...
+
+                    String username = tokens[2];         // androirc
+                    String hostname = tokens[3];         // i-7iq.48u.crjpc4.IP
+                    String server   = tokens[4];         // melocoton.chatzona.org
+                    String nick     = tokens[5];         // AAngelica_ch
+                    String flags    = tokens[6];         // H@r
+
+                    // 1. Encontrar el inicio del Real Name (después del primer ':')
+                    int realNameStartIndex = response.indexOf(":");
+                    String realNamePart = "";
+                    
+                    if (realNameStartIndex != -1) {
+                        // La parte raw es típicamente ":0 Amarte.es.mi.mejor.decisión."
+                        String rawRealName = response.substring(realNameStartIndex + 1).trim();
+                        
+                        // 2. ⭐ CORRECCIÓN: Eliminar el '0' del hopcount si está presente
+                        if (rawRealName.startsWith("0 ")) {
+                            realNamePart = rawRealName.substring(2).trim(); // Elimina "0 "
+                        } else {
+                            realNamePart = rawRealName;
+                        }
+                    } 
+                    // Ahora realNamePart es: "Amarte.es.mi.mejor.decisión." (Limpio)
+
+                    // ⭐ CREACIÓN DEL OBJETO IRCUser con el mapeo correcto
+                    // Constructor: IRCUser(nick, userHost, flags, server, realName)
+                    IRCUser user = new IRCUser(
+                        nick,
+                        username + "@" + hostname,
+                        flags,
+                        server,
+                        realNamePart
+                    );
+
+                    // ⭐ CLAVE: Solución de Hilo FX
+                    Platform.runLater(() -> {
+                        activeLWhoController.receiveUser(user);
+                    });
+
+                } catch (Exception e) {
+                    log.error("Error FATAL al parsear respuesta 352. Respuesta completa: {}", response, e);
+                }
+                return;
+            }
+         else if (code == 315) {
+             log.debug("Procesando respuesta 315 (Fin de WHO).");
+
+             String[] tokens = response.split(" ");
+             // Después de "El_ArWen ", el canal es el segundo token si la respuesta no empieza con el nick del bot
+             String channel = tokens.length >= 2 ? tokens[1] : (tokens.length >= 1 ? tokens[0] : "N/A"); // Mayor seguridad
+             
+             // ⭐ CLAVE: Solución de Hilo FX
+             Platform.runLater(() -> {
+                 activeLWhoController.finishQuery(channel);
+                 this.activeLWhoController = null; // Limpiar la referencia activa
+             });
+             return;
+         }
+        }
+
+
+        // ----------------------------------------------------------------------
+        //                MANEJO DE NAMES (353, 366)
+        // ----------------------------------------------------------------------
+
         if (code == 353 || code == 366) {
-            // La respuesta es típicamente: :server 353 nick = #canal :users...
             String[] parts = response.split(" ");
             String channel = null;
 
-            // Intentar extraer el nombre del canal de la respuesta
             if (code == 353 && parts.length >= 5) {
-                // El canal está en el índice 4 de la respuesta 353
-                channel = parts[4]; 
+                channel = parts[4];
             } else if (code == 366 && parts.length >= 4) {
-                 // El canal está en el índice 3 de la respuesta 366
                  channel = parts[3];
             }
 
             if (channel != null && namesDelegates.containsKey(channel)) {
                 CanalController delegate = namesDelegates.get(channel);
                 if (delegate != null) {
+                    // ⭐ CLAVE: Solución de Hilo FX
                     Platform.runLater(() -> {
-                        // Delegamos el manejo de la respuesta directamente al controlador del canal
-                        delegate.handleNamesResponse(code, response); 
+                        delegate.handleNamesResponse(code, response);
                     });
                 }
             }

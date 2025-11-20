@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.text.Text?>
+<?import javafx.scene.text.TextFlow?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="java_irc_chat_client.LWhoController"
+      spacing="10"
+      prefWidth="1000" prefHeight="600"
+      style="-fx-padding: 10;">
+
+    <Label fx:id="lblChannelInfo" style="-fx-font-weight: bold; -fx-font-size: 14;" text="Usuarios en el canal:"/>
+
+    <TableView fx:id="userTable" VBox.vgrow="ALWAYS">
+        <columns>
+            <TableColumn fx:id="colNick" text="Nick" prefWidth="120"/>
+            <TableColumn fx:id="colUserHost" text="user@host" prefWidth="250"/>
+            <TableColumn fx:id="colFlags" text="Flags" prefWidth="80"/>
+            <TableColumn fx:id="colServer" text="Servidor" prefWidth="180"/>
+            <TableColumn fx:id="colNombreReal" text="Nombre" prefWidth="200"/>
+        </columns>
+    </TableView>
+
+    <HBox alignment="CENTER_LEFT" spacing="10" style="-fx-border-color: #AAAAAA; -fx-border-width: 1; -fx-padding: 5;">
+        <Label text="Detalles: "/>
+        <TextFlow fx:id="statusFlow" HBox.hgrow="ALWAYS">
+            <Text fx:id="statusText" text="Haga clic en una fila para ver la información detallada del usuario."/>
+        </TextFlow>
+    </HBox>
+</VBox>

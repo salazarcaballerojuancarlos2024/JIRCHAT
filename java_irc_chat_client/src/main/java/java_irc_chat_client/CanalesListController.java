@@ -3,8 +3,11 @@ package java_irc_chat_client;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.collections.transformation.FilteredList;
+import javafx.collections.transformation.SortedList;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
+import javafx.scene.input.MouseButton;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 import javafx.stage.Stage;
@@ -83,23 +86,18 @@ public class CanalesListController {
         }
     }
 
+ // Dentro de CanalesListController.java
+
     @FXML
     public void initialize() {
         // --- CONFIGURACIÓN DE COLUMNAS (Mapeo de Propiedades) ---
         
-        // 1. Nombre del Canal
         colCanal.setCellValueFactory(data -> data.getValue().nombreProperty());
-        
-        // 2. Modos/Permisos
         colPermisos.setCellValueFactory(data -> data.getValue().modosProperty());
-        
-        // 3. Usuarios 
         colUsuarios.setCellValueFactory(data -> data.getValue().numUsuariosProperty().asObject());
-        
-        // 4. Descripción 
         colDescripcion.setCellValueFactory(data -> data.getValue().descripcionProperty());
         
-        // ⭐ Configuración del CellFactory para la descripción
+        // ⭐ Configuración del CellFactory para la descripción (manejo de colores IRC)
         colDescripcion.setCellFactory(col -> new TableCell<Canal, String>() {
             private final TextFlow textFlow = new TextFlow();
             {
@@ -116,27 +114,54 @@ public class CanalesListController {
                     setGraphic(null);
                 } else {
                     textFlow.getChildren().clear();
-                    // ⭐ CLAVE: Usar el método para parsear colores IRC
                     textFlow.getChildren().addAll(parseIRCText(item)); 
                     textFlow.prefWidthProperty().bind(colDescripcion.widthProperty().subtract(10));
                     setGraphic(textFlow);
                 }
             }
         });
-        
-        canalesTable.setItems(canales); 
 
         // ----------------------------------------------------------------------
-        // MODIFICADO: ELIMINAMOS LA ORDENACIÓN INICIAL POR USUARIOS.
-        // La ordenación alfabética se aplicará DE MANERA EXPLICITA en listEndCallback.
-        // Sin embargo, configuramos la columna de canal como la ordenación predeterminada
-        // visible para el usuario.
+        // ⭐ LÓGICA DE FILTRADO Y ORDENACIÓN
         // ----------------------------------------------------------------------
+        
+        // 1. Crear una lista filtrada a partir de la lista observable 'canales'
+        FilteredList<Canal> filteredCanales = new FilteredList<>(canales, p -> true);
+
+        // 2. Vincular el TextField de búsqueda al predicado de filtrado
+        txtBusqueda.textProperty().addListener((observable, oldValue, newValue) -> {
+            filteredCanales.setPredicate(canal -> {
+                // Si el campo de búsqueda está vacío, muestra todos los canales.
+                if (newValue == null || newValue.isEmpty()) {
+                    return true;
+                }
+                
+                // FILTRADO REAL: Compara el nombre del canal con la cadena de búsqueda.
+                String lowerCaseFilter = newValue.toLowerCase();
+                return canal.getNombre().toLowerCase().contains(lowerCaseFilter);
+            });
+            // Forzamos un refresco visual después de filtrar para asegurar el resaltado
+            Platform.runLater(canalesTable::refresh);
+        });
+
+        // 3. Envolver la FilteredList en una SortedList para mantener la ordenación
+        SortedList<Canal> sortedData = new SortedList<>(filteredCanales);
+        sortedData.comparatorProperty().bind(canalesTable.comparatorProperty());
+        
+        // 4. Asignar la lista ordenada y filtrada a la TableView
+        canalesTable.setItems(sortedData); 
+
+        // 5. Configurar la ordenación predeterminada (Nombre Canal, ascendente)
         canalesTable.getSortOrder().clear(); 
         colCanal.setSortType(TableColumn.SortType.ASCENDING);
         canalesTable.getSortOrder().add(colCanal); 
 
-        // --- COMPORTAMIENTO DE FILAS ---
+        // --- MANEJO DEL BOTÓN DE BÚSQUEDA ---
+        // El botón solo fuerza un refresco de la vista para aplicar los estilos de resaltado
+        btnBuscar.setOnAction(e -> canalesTable.refresh());
+
+
+        // --- COMPORTAMIENTO DE FILAS (RowFactory) ---
         canalesTable.setRowFactory(tv -> {
             TableRow<Canal> row = new TableRow<>() {
                 @Override
@@ -149,11 +174,14 @@ public class CanalesListController {
                     if (empty || item == null) {
                         setStyle("");
                     } else {
-                        // Estilos de búsqueda y pares/impares
+                        // Lógica para determinar el resaltado
                         String search = txtBusqueda.getText();
-                        if (search != null && !search.isEmpty() &&
-                                item.getNombre().toLowerCase().contains(search.toLowerCase())) {
-                            setStyle("-fx-background-color: #39FF14;"); // verde fosforito (Búsqueda)
+                        boolean matchesSearch = search != null && !search.isEmpty() && 
+                                                item.getNombre().toLowerCase().contains(search.toLowerCase());
+
+                        // ⭐ RESALTADO EN VERDE: Si coincide con el filtro de búsqueda
+                        if (matchesSearch) {
+                            setStyle("-fx-background-color: #39FF14;"); // verde fosforito
                         } else if (getIndex() % 2 == 0) {
                             setStyle("-fx-background-color: #FFF8DC;"); // vainilla (Par)
                         } else {
@@ -162,9 +190,10 @@ public class CanalesListController {
                     }
                 }
             };
-
+            
+            // --- ⭐ MANEJO DEL CLIC IZQUIERDO (Doble Clic para Unirse) ---
             row.setOnMouseClicked(event -> {
-                if (event.getClickCount() == 2 && !row.isEmpty()) {
+                if (event.getClickCount() == 2 && !row.isEmpty() && event.getButton().equals(MouseButton.PRIMARY)) {
                     Canal canal = row.getItem();
                     if (chatController != null && canal != null) {
                         Platform.runLater(() -> {
@@ -184,11 +213,40 @@ public class CanalesListController {
                     }
                 }
             });
+
+            // --- ⭐ MANEJO DEL CLIC DERECHO (Menú Contextual) ---
+            final ContextMenu rowMenu = new ContextMenu();
+            
+            // Opción 1: /Lwho (Listar usuarios con detalles)
+            MenuItem lwhoItem = new MenuItem("/Lwho (Listar Usuarios)");
+            lwhoItem.setOnAction(event -> {
+                Canal canal = row.getItem();
+                if (canal != null && chatController != null && bot != null) {
+                    // Llama al método del ChatController que abre la ventana de usuarios
+                    chatController.abrirVentanaLwho(canal.getNombre());
+                }
+            });
+
+            // Opción 2: Ver log
+            MenuItem logItem = new MenuItem("Ver log");
+            logItem.setOnAction(event -> {
+                Canal canal = row.getItem();
+                if (chatController != null && canal != null) {
+                    chatController.appendSystemMessage("➡️ Solicitado log para el canal: " + canal.getNombre());
+                }
+            });
+            
+            rowMenu.getItems().addAll(lwhoItem, logItem);
+
+            // Mostrar el menú contextual solo si la fila NO está vacía
+            row.contextMenuProperty().bind(
+                row.emptyProperty().map(empty -> empty ? null : rowMenu)
+            );
+
             return row;
         });
 
         canalesTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
-        btnBuscar.setOnAction(e -> canalesTable.refresh());
     }
 
     // -----------------------------------------------------------

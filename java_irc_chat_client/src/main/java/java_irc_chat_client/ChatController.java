@@ -938,4 +938,41 @@ public class ChatController {
         Platform.exit();
     }
     
+ 
+    /**
+     * Abre la ventana para listar los usuarios y sus detalles en un canal específico.
+     * @param channelName El nombre del canal (#ejemplo).
+     */
+    public void abrirVentanaLwho(String channelName) {
+        try {
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("/java_irc_chat_client/JIRCHAT_LWHOVIEW.fxml"));
+            Parent root = loader.load();
+            
+            LWhoController lwhoController = loader.getController();
+
+            // 1. Inyectar referencias necesarias
+            lwhoController.setChatController(this);
+            lwhoController.setBot(this.bot); // Inyectar el ChatBot
+            
+            // 2. Iniciar la consulta WHO
+            lwhoController.iniciarConsulta(channelName); 
+
+            // 3. Mostrar la ventana
+            Stage stage = new Stage();
+            stage.setTitle("Usuarios en " + channelName + " - (Cargando...)"); // Título temporal
+            stage.setScene(new Scene(root));
+            stage.initOwner(this.stagePrincipal); 
+            stage.initModality(Modality.NONE); // No modal para permitir otras interacciones
+            stage.show();
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            Platform.runLater(() -> {
+                Alert alert = new Alert(Alert.AlertType.ERROR, "No se pudo abrir la ventana de Usuarios: " + e.getMessage(), ButtonType.OK);
+                alert.setTitle("Error de Interfaz");
+                alert.showAndWait();
+            });
+        }
+    }
+    
 }
