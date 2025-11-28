@@ -20,6 +20,10 @@ import javafx.stage.Stage;
 import javafx.stage.Window;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.ListView;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Accordion; 
+import javafx.scene.control.TitledPane; 
 
 
 
@@ -30,12 +34,21 @@ public class ToolBarController {
     private ChatController chatController;
     private AnchorPane statusPane;
     private AnchorPane currentFrontPane;
-    
-    // ELIMINADO: private TransferManager transferManager; // Ya no es necesario
+    private VBox vboxCanales = new VBox(5);
+    private VBox vboxPrivados = new VBox(5);
+    private VBox vboxUsuarios = new VBox(5);
+    // ⭐ El Accordion que contendrá los VBox
+    private Accordion mainAccordion;
+ // ⭐ NUEVOS CAMPOS para guardar las referencias de las pestañas
+    private TitledPane tpCanales;
+    private TitledPane tpPrivados;
+   
 
     public void setRightPane(StackPane rightPane) { this.rightPane = rightPane; }
     public void setLeftPane(VBox leftPane) { this.leftPane = leftPane; }
     public ChatController getChatController() { return chatController; }
+    
+    private ListView<UsuarioConocido> knownUsersListView;
 
     @FXML
     private Button btnUserList;
@@ -95,8 +108,11 @@ public class ToolBarController {
 
 
 
+ // Dentro de ToolBarController.java
+
     /**
-     * Abre la ventana de usuarios conocidos y fuerza la recarga del XML cada vez.
+     * Abre la ventana de usuarios conocidos, fuerza la recarga del XML 
+     * e inyecta el ChatController para sincronizar los datos.
      */
     @FXML
     private void abrirUserList() {
@@ -108,12 +124,24 @@ public class ToolBarController {
             // Obtener controlador recién creado
             UsuariosController controller = loader.getController();
 
+            // ⭐ INYECCIÓN CRÍTICA: Pasar la referencia del ChatController
+            if (chatController == null) {
+                // Si el ChatController es null (no hay conexión iniciada),
+                // se puede seguir, pero la funcionalidad de sincronización fallará.
+                System.err.println("Advertencia: ChatController no inicializado al abrir Lista de Usuarios.");
+            } else {
+                // Permitir que UsuariosController llame a métodos del ChatController 
+                // (ej. addNewKnownUser)
+                controller.setChatController(chatController);
+            }
+
             // Cargar los datos desde el XML siempre al abrir la ventana
             controller.cargarUsuariosDesdeXML();
 
             Stage stage = new Stage();
             stage.setTitle("Usuarios Conocidos");
             stage.setScene(new Scene(root));
+            // Establecer la ventana principal como dueña (si está disponible)
             stage.initOwner(btnUserList.getScene().getWindow());
             stage.initModality(Modality.NONE);
 
@@ -124,6 +152,10 @@ public class ToolBarController {
 
         } catch (IOException e) {
             e.printStackTrace();
+            Alert alert = new Alert(Alert.AlertType.ERROR,
+                    "Error al abrir la ventana de Usuarios Conocidos: " + e.getMessage(),
+                    ButtonType.OK);
+            alert.showAndWait();
         }
     }
     
@@ -177,7 +209,7 @@ public class ToolBarController {
 
  
 
-    private void abrirVentanaConexionDesdeInicio() {
+    public void abrirVentanaConexionDesdeInicio() {
         try {
             // Cargar FXML
             FXMLLoader loader = new FXMLLoader(getClass().getResource("/java_irc_chat_client/JIRCHAT_CONEXION.fxml"));
@@ -263,50 +295,133 @@ public class ToolBarController {
     /**
      * Abre la ventana de chat y vincula las floating windows al primaryStage.
      */
-    @FXML
-    public void abrirChat(Stage primaryStage) {
-        if (chatController != null) return; // Ya abierto
+ 
 
-        try {
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("/java_irc_chat_client/JIRCHAT_CONNECT_STAGE.fxml"));
-            AnchorPane chatPane = loader.load();
-            chatController = loader.getController();
+ /**
+  * Abre la ventana de chat e inicializa la UI izquierda.
+  * MODIFICADO: Ahora construye el Accordion y lo añade DEBAJO del botón "Status".
+  */
+ // Dentro de ToolBarController.java
 
-            // Vincular panes
-            chatController.setLeftPane(leftPane);
-            chatController.setRightPane(rightPane);
+    /**
+     * Abre la ventana de chat e inicializa la UI izquierda con el botón "Status"
+     * y el Accordion para Canales/Privados, vinculando las floating windows al primaryStage.
+     */
+ // En ToolBarController.java
 
-            // --- INICIALIZACIÓN DE DCC ELIMINADA ---
-            // Ya no es necesario crear ni inyectar TransferManager.
+ // 🚨 La firma ha cambiado de 'void' a 'ChatController'
+ @FXML
+ public ChatController abrirChat(Stage primaryStage) {
+     // Si ya está abierto, devolvemos la instancia existente.
+     if (chatController != null) {
+         return chatController; // ⭐ CAMBIO: Devolver la instancia existente
+     }
 
-            // Añadir al rightPane
-            rightPane.getChildren().add(chatPane);
+     try {
+         FXMLLoader loader = new FXMLLoader(getClass().getResource("/java_irc_chat_client/JIRCHAT_CONNECT_STAGE.fxml"));
+         AnchorPane chatPane = loader.load();
+         
+         // Mantenemos la asignación a la variable de instancia del ToolBarController
+         chatController = loader.getController(); 
 
-            // Guardar statusPane y ponerlo en primer plano
-            statusPane = (AnchorPane) chatController.getRootPane();
-            currentFrontPane = statusPane;
+         // --- 1. CONSTRUCCIÓN DE LA ESTRUCTURA IZQUIERDA (Status + Accordion) ---
+         
+         // Crear el Accordion y sus TitledPanes, guardando las referencias internas
+         mainAccordion = createChannelAccordion();
+         
+         // Crear el botón Status
+         Button statusButton = new Button("Status");
+         statusButton.setMaxWidth(Double.MAX_VALUE);
+         statusButton.setOnAction(e -> showStatus());
+         
+         // Limpiar el leftPane (el VBox contenedor principal) y añadir los elementos
+         if (leftPane != null) {
+             leftPane.getChildren().clear(); // Limpiamos cualquier contenido anterior
+             leftPane.getChildren().add(statusButton); // Añadir el botón Status (fijo arriba)
+             leftPane.getChildren().add(mainAccordion);  // Añadir el Accordion (debajo)
+         }
+         
+         // --- 2. INYECCIÓN CRÍTICA DE REFERENCIAS AL CHATCONTROLLER ---
+         
+         // Inyectar el panel derecho principal (Mantenido)
+         chatController.setRightPane(rightPane);
+         
+         // Inyectar los VBox internos (Mantenido)
+         chatController.setVboxCanales(vboxCanales);
+         chatController.setVboxPrivados(vboxPrivados);
+         chatController.setVboxUsuarios(vboxUsuarios);
+         
+         // Inyectar la estructura del Accordion para la funcionalidad de expansión (Mantenido)
+         chatController.setMainAccordion(mainAccordion);
+         chatController.setTpCanales(tpCanales);
+         chatController.setTpPrivados(tpPrivados);
+         
+      // ⭐ LLAMADA CRÍTICA: CARGAR LOS USUARIOS AL LISTVIEW (Mantenido)
+         chatController.loadKnownUsersFromXML();
+         
+         // --- 3. CONFIGURACIÓN FINAL Y CONEXIÓN ---
 
-            // Conectar al IRC (Aquí se crea el bot)
-            //chatController.connectToIRC();
-            abrirVentanaConexionDesdeInicio();
+         // Añadir el panel de chat (Status) al rightPane (Mantenido)
+         rightPane.getChildren().add(chatPane);
 
-            // Crear botón Status en el leftPane
-            if (leftPane != null) {
-                Button statusButton = new Button("Status");
-                statusButton.setMaxWidth(Double.MAX_VALUE);
-                statusButton.setOnAction(e -> showStatus());
-                leftPane.getChildren().add(statusButton);
-            }
+         // Guardar statusPane y ponerlo en primer plano (Mantenido)
+         statusPane = (AnchorPane) chatController.getRootPane();
+         currentFrontPane = statusPane;
 
-            // Vincular ventanas flotantes al primaryStage
-            if (primaryStage != null) {
-                chatController.bindFloatingWindowsToRightPane(primaryStage);
-            }
+         // Abrir la ventana de Conexión (donde se creará el bot y se iniciará la conexión) (Mantenido)
+         //abrirVentanaConexionDesdeInicio();
 
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
+         // Vincular ventanas flotantes al primaryStage (Mantenido)
+         if (primaryStage != null) {
+             chatController.bindFloatingWindowsToRightPane(primaryStage);
+         }
+         
+         // ⭐ CAMBIO: Devolver el controlador recién creado y configurado
+         return chatController; 
+
+     } catch (IOException e) {
+         e.printStackTrace();
+         // ⭐ CAMBIO: Devolver null si la carga falla
+         return null; 
+     }
+ }
+
+
+ /**
+  * Método auxiliar que crea el Accordion con los 3 TitledPanes y ScrollPanes.
+  */
+ private Accordion createChannelAccordion() {
+	    Accordion accordion = new Accordion();
+	    
+	    // --- Pestaña 1: CANALES ---
+	    ScrollPane scrollCanales = new ScrollPane(vboxCanales);
+	    scrollCanales.setFitToWidth(true); 
+	    tpCanales = new TitledPane("Canales", scrollCanales); // ⭐ REFERENCIA GUARDADA
+	    
+	    // --- Pestaña 2: PRIVADOS ---
+	    ScrollPane scrollPrivados = new ScrollPane(vboxPrivados);
+	    scrollPrivados.setFitToWidth(true);
+	    tpPrivados = new TitledPane("Privados", scrollPrivados); // ⭐ REFERENCIA GUARDADA
+	    
+	 // --- Pestaña 3: USUARIOS ---
+	 // ⭐ CREAR EL LISTVIEW DE USUARIOS
+	 knownUsersListView = new ListView<>();
+	 // Configurar la factory de celdas para usar nuestra clase personalizada
+	 knownUsersListView.setCellFactory(param -> new UsuarioConocidoCell());
+	 knownUsersListView.setItems(chatController.getKnownUsersList()); // Asumimos que hay un getter en ChatController
+
+	 ScrollPane scrollUsuarios = new ScrollPane(knownUsersListView); // Usar el ListView aquí
+	 scrollUsuarios.setFitToWidth(true);
+	 TitledPane tpUsuarios = new TitledPane("Usuarios", scrollUsuarios);
+	    
+	    // Añadir las pestañas al Accordion
+	    accordion.getPanes().addAll(tpCanales, tpPrivados, tpUsuarios);
+	    
+	    // Expandir la primera pestaña por defecto (opcional)
+	    accordion.setExpandedPane(tpCanales); 
+	    
+	    return accordion;
+	}
 
 
     /**

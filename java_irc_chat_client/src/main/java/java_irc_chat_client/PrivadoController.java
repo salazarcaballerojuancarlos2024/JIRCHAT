@@ -166,6 +166,27 @@ public class PrivadoController {
             });
         };
     }
+    
+ // Dentro de PrivadoController.java
+
+    /**
+     * Muestra una línea de texto plano directamente en el chatBox.
+     * Se usa SOLAMENTE para cargar el historial desde el archivo.
+     * NO llama a ChatLogger.log().
+     */
+    public void appendRawLogLine(String linea) {
+        Platform.runLater(() -> {
+            if (chatBox == null) return;
+            
+            // Creamos un solo TextFlow para la línea completa del log.
+            // Esto asegura que la línea se muestre exactamente como está en el archivo.
+            TextFlow flow = new TextFlow(new Text(linea));
+            flow.setStyle("-fx-padding: 0 0 0 0;"); // Estilo mínimo
+            
+            chatBox.getChildren().add(flow);
+            autoScroll();
+        });
+    }
 
     // ==========================================================
     // MENSAJES DE TEXTO
@@ -174,18 +195,26 @@ public class PrivadoController {
         String text = inputField_privado.getText().trim();
         if (text.isEmpty() || bot == null || destinatario == null) return;
 
+        // 1. Enviar mensaje por IRC
         bot.sendMessage(destinatario, text); 
 
-        // Mostrar localmente
-        appendMessage("Yo", text);
+        // 2. Mostrar localmente
+        // En el chat privado, nuestro propio nick es el "usuario" y el destinatario es el log.
+        String myNick = bot.getNick(); // Asumimos que puedes obtener tu nick del bot
 
-        // Guardar en log (Asumiendo que ChatLogger existe)
-        // ChatLogger.log(destinatario, "Yo", text);
+        appendMessage(myNick, text); // Usamos nuestro propio nick para la visualización
+
+        // ⭐ PUNTO DE LOGGING 1: MENSAJE SALIENTE (MÍO)
+        // El nombre del log es el nick del destinatario.
+        ChatLogger.log(destinatario, myNick, text); 
+        // -----------------------------------------------------
 
         inputField_privado.clear();
     }
     
-    public void appendMessage(String usuario, String mensaje) {
+public void appendMessage(String usuario, String mensaje) {
+        
+        
         Platform.runLater(() -> {
             Text userText = new Text("<" + usuario + "> ");
             userText.setFont(Font.font("Segoe UI Emoji", FontWeight.BOLD, 14));

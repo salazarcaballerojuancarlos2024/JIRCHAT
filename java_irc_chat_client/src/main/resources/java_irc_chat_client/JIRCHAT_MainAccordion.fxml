@@ -1,0 +1,35 @@
+<Accordion fx:id="mainAccordion">
+    <panes>
+        
+        <TitledPane text="Canales">
+            <content>
+                <ScrollPane fx:id="scrollCanales">
+                    <content>
+                        <VBox fx:id="vboxCanales" spacing="5"/>
+                    </content>
+                </ScrollPane>
+            </content>
+        </TitledPane>
+        
+        <TitledPane text="Privados">
+            <content>
+                <ScrollPane fx:id="scrollPrivados">
+                    <content>
+                        <VBox fx:id="vboxPrivados" spacing="5"/>
+                    </content>
+                </ScrollPane>
+            </content>
+        </TitledPane>
+        
+        <TitledPane fx:id="tpUsuarios" text="Usuarios">
+            <content>
+                <ScrollPane fx:id="scrollUsuarios" fitToHeight="true" fitToWidth="true">
+                    <content>
+                        <ListView fx:id="knownUsersListView" VBox.vgrow="ALWAYS"/> 
+                    </content>
+                </ScrollPane>
+            </content>
+        </TitledPane>
+        
+    </panes>
+</Accordion>

@@ -213,35 +213,88 @@ public class CanalController {
         });
     }
 
-    // --- Métodos de Lógica de Chat ---
+    
 
-    private void handleTabCompletion(boolean reverse) {
-        String text = inputField_canal.getText();
-        int caretPos = inputField_canal.getCaretPosition();
-        int start = Math.max(0, text.lastIndexOf(' ', caretPos - 1) + 1);
-        String prefix = text.substring(start, caretPos).trim();
-        if (prefix.isEmpty()) return;
+ private void handleTabCompletion(boolean reverse) {
+     String text = inputField_canal.getText();
+     int caretPos = inputField_canal.getCaretPosition();
+     
+     // 1. Encontrar el inicio de la palabra actual
+     int start = Math.max(0, text.lastIndexOf(' ', caretPos - 1) + 1);
+     
+     // ⭐ CRÍTICO: Definir el prefijo base del texto que se está escribiendo (puede ser incompleto).
+     // Usamos esta porción de texto para decidir si REINICIAR el ciclo de coincidencias.
+     String currentTextSegment = text.substring(start, caretPos).trim();
+     
+     if (currentTextSegment.isEmpty() || currentTextSegment.startsWith("/")) return;
 
-        if (!prefix.equalsIgnoreCase(lastPrefix)) {
-            currentMatches.clear();
-            // ⭐ CORRECCIÓN: Usar usersList para la autocompleción
-            for (String nick : usersList) { 
-                if (nick == null || nick.startsWith("Usuarios:")) continue;
-                String cleanNick = nick.startsWith("@") || nick.startsWith("+") ? nick.substring(1) : nick;
-                if (cleanNick.toLowerCase().startsWith(prefix.toLowerCase())) currentMatches.add(nick);
-            }
-            currentMatches.sort(String.CASE_INSENSITIVE_ORDER);
-            lastPrefix = prefix;
-            matchIndex = -1;
-        }
+     // --- LÓGICA DE GESTIÓN DE COINCIDENCIAS ---
+     
+     // ⭐ CONDICIÓN DE REINICIO CORREGIDA:
+     // Reiniciamos si el texto base que estamos autocompletando (currentTextSegment) 
+     // NO empieza con el prefijo que usamos para el ÚLTIMO ciclo de búsqueda (lastPrefix).
+     // O si el historial está vacío (primera pulsación o limpieza).
+     
+     boolean shouldRecalculate = lastPrefix == null || currentMatches.isEmpty() || 
+                                 !currentTextSegment.toLowerCase().startsWith(lastPrefix.toLowerCase());
 
-        if (currentMatches.isEmpty()) return;
-        matchIndex = reverse ? (matchIndex - 1 + currentMatches.size()) % currentMatches.size()
-                             : (matchIndex + 1) % currentMatches.size();
-        String replacement = currentMatches.get(matchIndex);
-        inputField_canal.setText(text.substring(0, start) + replacement + text.substring(caretPos));
-        inputField_canal.positionCaret(start + replacement.length());
-    }
+     if (shouldRecalculate) {
+         // En este punto, el prefijo para la BÚSQUEDA debe ser el segmento actual del texto.
+         String searchPrefix = currentTextSegment;
+         
+         currentMatches.clear();
+         
+         // Recalcular coincidencias (siempre con el nick limpio)
+         for (String nickWithPrefix : usersList) { 
+             if (nickWithPrefix == null || nickWithPrefix.startsWith("Usuarios:")) continue;
+             
+             String cleanNick = nickWithPrefix.startsWith("@") || nickWithPrefix.startsWith("+") 
+                                ? nickWithPrefix.substring(1) 
+                                : nickWithPrefix;
+             
+             // Usamos el 'searchPrefix' para encontrar coincidencias.
+             if (cleanNick.toLowerCase().startsWith(searchPrefix.toLowerCase())) {
+                 currentMatches.add(cleanNick); 
+             }
+         }
+         
+         if (currentMatches.isEmpty()) {
+              // Si no hay coincidencias, también limpiamos el estado
+              lastPrefix = null;
+              matchIndex = -1;
+              return;
+         }
+         
+         currentMatches.sort(String.CASE_INSENSITIVE_ORDER);
+         
+         // ⭐ ALMACENAR el prefijo original utilizado para la BÚSQUEDA.
+         lastPrefix = searchPrefix;
+         
+         // Colocamos el índice para empezar por la primera coincidencia (índice 0)
+         matchIndex = -1; 
+     }
+
+     // --- AVANCE DEL ÍNDICE (CÍCLICO) ---
+     
+     // Si no se recalculó (shouldRecalculate == false), avanzamos el índice.
+     // Esto es lo que permite ir a la segunda, tercera, etc., coincidencia.
+     
+     matchIndex = reverse ? (matchIndex - 1 + currentMatches.size()) % currentMatches.size()
+                          : (matchIndex + 1) % currentMatches.size();
+     
+     // 3. REEMPLAZO DEL TEXTO
+     String replacement = currentMatches.get(matchIndex);
+     
+     // Insertar el nick limpio en el TextField, reemplazando SOLO el prefijo original
+     // Es CRÍTICO usar el 'lastPrefix' para saber qué parte del texto reemplazar.
+     String textToReplace = text.substring(0, start);
+     
+     // Reemplazamos el segmento actual que está en el campo con la nueva coincidencia
+     inputField_canal.setText(textToReplace + replacement + text.substring(caretPos));
+     
+     // Colocar el cursor al final del nick autocompletado
+     inputField_canal.positionCaret(start + replacement.length());
+ }
 
     private void sendCommand() {
         String text = inputField_canal.getText().trim();
@@ -278,8 +331,30 @@ public class CanalController {
 
     public void sendMessageToChannel(String msg) {
         if (bot != null && channelName != null) {
+            // 1. Enviar el mensaje al servidor IRC
             bot.sendMessage(channelName, msg);
-            appendMessage("Yo", msg);
+            
+            // 2. Mostrar mi propio mensaje en la UI
+            // Usamos el nick del bot (nuestro nick) para el registro y la visualización
+            String myNick = bot.getNick(); 
+            
+            // 3. ⭐ LOGGING: Registrar el mensaje que acabo de enviar
+            ChatLogger.log(channelName, myNick, msg);
+
+            // 4. Mostrar en la UI (similar a appendMessage, pero asegurando el nick correcto)
+            Platform.runLater(() -> {
+                if (chatBox == null) return; 
+                
+                TextFlow flow = new TextFlow();
+                Text userText = new Text("<" + myNick + "> ");
+                userText.setFill(Color.DARKBLUE);
+                userText.setFont(Font.font("System", FontWeight.BOLD, 12));
+                flow.getChildren().add(userText);
+                
+                flow.getChildren().addAll(parseIRCMessage(msg).getChildren());
+                chatBox.getChildren().add(flow);
+                autoScroll();
+            });
         }
     }
 
@@ -287,13 +362,14 @@ public class CanalController {
 
     public void updateUsers(List<String> userList) {
         Platform.runLater(() -> {
-            // --- Lógica de KnownNicks (Se mantiene) ---
-            try { 
-                this.knownNicks = Collections.emptySet(); 
-            } 
-            catch (Exception e) { 
-                this.knownNicks = Collections.emptySet(); 
-            }
+           
+        	// --- Lógica de KnownNicks (Se mantiene) ---
+            //try { 
+            //    this.knownNicks = Collections.emptySet(); 
+            //} 
+            //catch (Exception e) { 
+            //    this.knownNicks = Collections.emptySet(); 
+            //}
 
             // --- PREPARACIÓN ---
             List<String> validUsers = userList.stream()
@@ -357,6 +433,11 @@ public class CanalController {
      * CORREGIDO: Usa chatBox y la lógica de TextFlow.
      */
     public void appendMessage(String usuario, String mensaje) {
+        // ⭐ 3. LOGGING: Registrar el mensaje antes de mostrarlo en la UI
+        if (channelName != null) {
+            ChatLogger.log(this.channelName, usuario, mensaje);
+        }
+        
         Platform.runLater(() -> {
             // Usa el campo FXML declarado en la clase
             if (chatBox == null) return; 
@@ -383,8 +464,14 @@ public class CanalController {
 
     /**
      * Muestra mensajes del sistema (JOIN, PART, KICK) en la UI.
+     * CORREGIDO: Añadida la lógica de logging.
      */
     public void appendSystemMessage(String mensaje, MessageType type, String nickSalida) {
+        // ⭐ 3. LOGGING: Registrar el mensaje del sistema (JOIN/PART/KICK)
+        if (channelName != null) {
+            ChatLogger.logSystem(this.channelName, mensaje);
+        }
+        
         Platform.runLater(() -> {
             if (chatBox == null) return; 
 
@@ -415,7 +502,6 @@ public class CanalController {
             if (type == MessageType.PART && nickSalida != null) showExitPopup(nickSalida, channelName);
         });
     }
-
     /**
      * Realiza el auto-scroll en el área de chat.
      */
@@ -554,5 +640,19 @@ public class CanalController {
         ft.setOnFinished(e -> popupPane.getChildren().remove(container));
         return container;
     }
+ // Dentro de CanalController.java (Añadir a la sección de Setters)
 
-} // Fin de la clase CanalController
+    /**
+     * ⭐ MÉTODO CLAVE PARA EL RESALTADO VERDE ⭐
+     * Recibe el Set de nicks locales (del XML) inyectado por el ChatController.
+     * @param nicks El Set de nicks conocidos (en minúsculas).
+     */
+    public void setKnownNicksSet(Set<String> nicks) {
+        this.knownNicks = nicks; 
+        
+        // Forzamos la actualización del ListView para aplicar el nuevo color, 
+        // ya que los datos de la lista ya existen.
+        Platform.runLater(() -> userListView_canal.refresh()); 
+    }
+
+} 

@@ -55,6 +55,11 @@ public class UsuariosController {
     
     private final ObservableList<Ignorado> ignorados = FXCollections.observableArrayList();
 
+    private ChatController chatController;
+    public void setChatController(ChatController chatController) {
+        this.chatController = chatController;    
+    }
+    
     
     
     @FXML
@@ -87,6 +92,7 @@ public class UsuariosController {
 
 
     // ---------------- MÉTODOS USUARIOS ----------------
+ // Dentro de UsuariosController.java
     @FXML
     private void agregarUsuario() {
         String nick = txtUsuario.getText().trim();
@@ -95,18 +101,34 @@ public class UsuariosController {
         if (!nick.isEmpty()) {
             usuarios.add(new UsuarioItem(nick, comentario, sonido));
             guardarUsuariosEnXML();
+
+            // ⭐ NOTIFICAR AL CHATCONTROLLER PARA ACTUALIZAR EL LISTVIEW
+            if (chatController != null) {
+            //    chatController.addNewKnownUser(nick);
+            }
+
             txtUsuario.clear();
             txtComentario.clear();
             txtSonido.clear();
         }
     }
 
+ // Dentro de UsuariosController.java
+
     @FXML
     private void eliminarUsuario() {
         UsuarioItem selected = tablaUsuarios.getSelectionModel().getSelectedItem();
         if (selected != null) {
+            String nickEliminado = selected.getUsuario(); // Obtenemos el nick antes de eliminar
+            
             usuarios.remove(selected);
             guardarUsuariosEnXML();
+            
+            // ⭐ NOTIFICACIÓN AL CHATCONTROLLER
+            // Llama al método que crearemos en ChatController para eliminar de la lista lateral
+            if (chatController != null) {
+                chatController.removeKnownUser(nickEliminado);
+            }
         }
     }
 

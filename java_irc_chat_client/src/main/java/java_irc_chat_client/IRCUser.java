@@ -1,26 +1,31 @@
 package java_irc_chat_client;
 
+import javafx.beans.property.BooleanProperty;
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.StringProperty;
 
 public class IRCUser {
 
-    // --- PROPIEDADES VISIBLES EN LA TABLA (Tabla usa Property()) ---
-    private final StringProperty nick = new SimpleStringProperty();           // Columna 1
-    private final StringProperty userHost = new SimpleStringProperty();       // Columna 2 (nick@host)
-    private final StringProperty flags = new SimpleStringProperty();          // Columna 3
-    private final StringProperty server = new SimpleStringProperty();         // Columna 4
-    private final StringProperty realName = new SimpleStringProperty();       // Columna 5 (Mapea el campo 'username' de tu constructor)
+    // --- PROPIEDADES VISIBLES EN LA TABLA (Usan Property()) ---
+    private final StringProperty nick = new SimpleStringProperty();
+    private final StringProperty userHost = new SimpleStringProperty(); 
+    private final StringProperty flags = new SimpleStringProperty();      
+    private final StringProperty server = new SimpleStringProperty();     
+    private final StringProperty realName = new SimpleStringProperty(); 
+    
+    // ⭐ PROPIEDAD CRÍTICA: Indica el estado de conexión para la UI (color verde/rojo)
+    private final BooleanProperty isConnected = new SimpleBooleanProperty(false);
 
-    // --- PROPIEDADES ADICIONALES PARA EL DETALLE (statusText usa getXxx()) ---
+
+    // --- PROPIEDADES ADICIONALES PARA EL DETALLE (statusText) ---
     private final StringProperty serverInfo = new SimpleStringProperty();
     private final StringProperty connectTime = new SimpleStringProperty();
     private final StringProperty idleTime = new SimpleStringProperty();
 
 
     /**
-     * Constructor usado por ChatBot.onServerResponse (WHO reply).
-     * Los parámetros corresponden a: nick, nick@host, flags, server, username (el Ident/RealName en el FXML).
+     * Constructor usado por ChatBot.onServerResponse (WHO reply 352).
      */
     public IRCUser(String nick, String userHost, String flags, String server, String realName) {
         // Asignación de valores a las propiedades
@@ -30,14 +35,15 @@ public class IRCUser {
         setServer(server);
         setRealName(realName);
         
-        // Inicializar campos adicionales (no vienen en la respuesta 352 estándar)
+        // Inicializar propiedades de estado
+        setIsConnected(true); // El 352 (WHO) siempre indica que el usuario está conectado.
         setServerInfo("N/A"); 
         setConnectTime("N/A"); 
-        setIdleTime("0s"); // Inactivo
+        setIdleTime("0s"); 
     }
     
     // =========================================================
-    //         Getters y Setters (Para lógica y statusText)
+    //         Getters y Setters (Para lógica interna y texto)
     // =========================================================
     
     // --- Getters de Tabla ---
@@ -45,14 +51,18 @@ public class IRCUser {
     public String getUserHost() { return userHost.get(); }
     public String getFlags() { return flags.get(); }
     public String getServer() { return server.get(); }
-    public String getRealName() { return realName.get(); } // Usado para mostrar el Ident/Username
+    public String getRealName() { return realName.get(); }
+
+    // --- Getters y Setters de Conexión (Método directo) ---
+    public boolean getIsConnected() { return isConnected.get(); }
+    public void setIsConnected(boolean value) { isConnected.set(value); } // Usado por updateConnectionStatus
     
     // --- Getters de Detalle (Para statusText) ---
     public String getServerInfo() { return serverInfo.get(); }
     public String getConnectTime() { return connectTime.get(); }
     public String getIdleTime() { return idleTime.get(); }
     
-    // Setters (Si son necesarios, aunque aquí solo los usamos internamente)
+    // --- Setters (Usados internamente) ---
     public void setNick(String value) { nick.set(value); }
     public void setUserHost(String value) { userHost.set(value); }
     public void setFlags(String value) { flags.set(value); }
@@ -64,7 +74,7 @@ public class IRCUser {
 
 
     // =========================================================
-    //         Property Methods (CRÍTICO para TableView)
+    //         Property Methods (CRÍTICO para JavaFX TableView)
     // =========================================================
     
     public StringProperty nickProperty() { return nick; }
@@ -73,7 +83,10 @@ public class IRCUser {
     public StringProperty serverProperty() { return server; }
     public StringProperty realNameProperty() { return realName; }
     
-    // Propiedades adicionales (si quisieras mostrarlas en la tabla)
+    // ⭐ PROPIEDAD CRÍTICA: Enlaza el estado booleano a la celda de la UI
+    public BooleanProperty isConnectedProperty() { return isConnected; }
+    
+    // Propiedades adicionales
     public StringProperty serverInfoProperty() { return serverInfo; }
     public StringProperty connectTimeProperty() { return connectTime; }
     public StringProperty idleTimeProperty() { return idleTime; }
