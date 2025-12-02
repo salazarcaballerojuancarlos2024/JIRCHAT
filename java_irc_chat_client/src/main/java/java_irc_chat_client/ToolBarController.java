@@ -209,9 +209,22 @@ public class ToolBarController {
         }
     }
 
- 
 
-    public void abrirVentanaConexionDesdeInicio() {
+    /**
+     * Abre la ventana de conexión de forma modal. 
+     * Mantiene toda la lógica de carga, guardado y manejo de errores del original.
+     * * @param chatController La instancia principal de ChatController, inyectada desde MainApp.
+     */
+    public void abrirVentanaConexionDesdeInicio(ChatController chatController) {
+        
+        // NOTA: El argumento 'chatController' ahora contiene la instancia que antes
+        // era un campo de clase. El chequeo de nullidad es redundante si se llama 
+        // correctamente desde MainApp, pero lo mantenemos por seguridad.
+        if (chatController == null) {
+            System.err.println("Error: Instancia de ChatController es nula. No se puede abrir el formulario.");
+            return;
+        }
+
         try {
             // Cargar FXML
             FXMLLoader loader = new FXMLLoader(getClass().getResource("/java_irc_chat_client/JIRCHAT_CONEXION.fxml"));
@@ -220,11 +233,7 @@ public class ToolBarController {
             // Obtener el controlador de la ventana de conexión
             ConexionController controller = loader.getController();
 
-            // ⭐ INYECCIÓN CRÍTICA: Dar al controlador de conexión acceso al ChatController
-            // Esto es NECESARIO para que el botón "Conectar" inicie la conexión real.
-            if (chatController == null) {
-                throw new IllegalStateException("El ChatController principal no ha sido inicializado.");
-            }
+            // ⭐ INYECCIÓN CRÍTICA (CORREGIDA): Usa el argumento del método
             controller.setChatController(chatController); 
 
             // Cargar los datos guardados en el formulario
@@ -237,7 +246,7 @@ public class ToolBarController {
             stage.setResizable(false); 
             
             // Determinar la Stage principal para establecerla como propietaria
-            // Esto mantiene la ventana de conexión sobre la ventana principal.
+            // NOTA: Asumo que 'rightPane' es un campo de clase accesible en ToolBarController
             Window primarySceneWindow = rightPane != null ? rightPane.getScene().getWindow() : null;
             Stage primaryStage = (primarySceneWindow instanceof Stage) ? (Stage) primarySceneWindow : null;
             
@@ -277,13 +286,6 @@ public class ToolBarController {
                     "Error al cargar la interfaz de conexión (FXML): " + e.getMessage(),
                     ButtonType.OK);
             alert.showAndWait();
-        } catch (IllegalStateException e) {
-             // Error de inicialización del ChatController
-             e.printStackTrace();
-             Alert alert = new Alert(Alert.AlertType.ERROR,
-                    "Error de dependencias: " + e.getMessage(),
-                    ButtonType.OK);
-             alert.showAndWait();
         } catch (Exception e) {
             // Captura cualquier otra excepción general (ej. error al cargar formulario)
             e.printStackTrace();

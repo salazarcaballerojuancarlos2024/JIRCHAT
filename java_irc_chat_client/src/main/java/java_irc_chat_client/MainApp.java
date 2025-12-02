@@ -8,22 +8,24 @@ import javafx.scene.control.SplitPane;
 import javafx.scene.control.ToolBar;
 import javafx.scene.layout.*;
 import javafx.stage.Stage;
-import java.io.IOException; // Importación necesaria para el manejo de excepciones de FXML
+import java.io.IOException;
 
-import irc.ChatBot;
+// Importación ChatBot eliminada, ya que no se usa directamente en start()
+// import irc.ChatBot; 
 
 public class MainApp extends Application {
 
     // --- Configuración de Conexión IRC ---
-    private static final String NICK = "El_ArWeN"; // Tu nick predeterminado
-    private static final String LOGIN = "El_ArWeN"; // Tu login predeterminado
-    private static final String SERVER = "lima.chatzona.org"; // Servidor IRC
+    // ELIMINADAS: NICK, LOGIN, SERVER. Estos serán gestionados por ConexionController.
+
+    // ⭐ Referencia al controlador principal (Necesario para inyectar en el formulario)
+    private ChatController mainChatController;
 
     @Override
     public void start(Stage primaryStage) throws Exception {
+        
+        // --- 1. Cargar la Estructura Principal de la UI ---
         VBox rootVBox = new VBox();
-
-        // --- Cargar Menú y ToolBar ---
         MenuBar menuBar = FXMLLoader.load(getClass().getResource("menu.fxml"));
         rootVBox.getChildren().add(menuBar);
 
@@ -31,24 +33,19 @@ public class MainApp extends Application {
         ToolBar toolBar = toolbarLoader.load();
         ToolBarController tbController = toolbarLoader.getController();
 
-        // --- Crear SplitPane y Paneles ---
         SplitPane splitPane = new SplitPane();
-
         VBox leftPane = new VBox();
         leftPane.setPrefWidth(150);
         leftPane.setStyle("-fx-border-color: orange; -fx-border-width: 2;");
         leftPane.setSpacing(10);
-
         StackPane rightPane = new StackPane();
 
-        // Asignación de Panes al ToolBarController (Mantenida la funcionalidad)
         tbController.setLeftPane(leftPane);
         tbController.setRightPane(rightPane);
 
         splitPane.getItems().addAll(leftPane, rightPane);
         splitPane.setDividerPositions(150.0 / 1200);
         
-        // Listener para mantener el ancho del panel izquierdo (Mantenida la funcionalidad)
         splitPane.getDividers().get(0).positionProperty().addListener((obs, oldVal, newVal) -> {
             splitPane.getDividers().get(0).setPosition(150.0 / splitPane.getWidth());
         });
@@ -56,48 +53,37 @@ public class MainApp extends Application {
         VBox.setVgrow(splitPane, Priority.ALWAYS);
         rootVBox.getChildren().addAll(toolBar, splitPane);
 
-        // --- Configuración de la Ventana Principal ---
         Scene scene = new Scene(rootVBox, 1200, 800);
         primaryStage.setScene(scene);
         primaryStage.setTitle("JIRCHAT");
         
         // ======================================================================
-        // ⭐ NUEVA FUNCIONALIDAD: INYECCIÓN DE DEPENDENCIA DEL CHATBOT ⭐
+        // ⭐ CONFIGURACIÓN DEL CHAT CONTROLLER ⭐
         // ======================================================================
 
-        // 1. Abrir Chat y obtener la referencia al ChatController
-        // Se asume que tbController.abrirChat() devuelve la instancia de ChatController.
-        ChatController mainController = tbController.abrirChat(primaryStage);
+        // 2. Abrir Chat y obtener la referencia al ChatController
+        // Esto carga la interfaz de chat (pestañas, etc.) en el rightPane
+        mainChatController = tbController.abrirChat(primaryStage);
         
-        
-     
-        
-        if (mainController != null) {
-            
-            // 2. Crear la instancia del ChatBot, pasándole el controlador principal
-            ChatBot bot = new ChatBot(mainController, NICK, LOGIN); 
-
-            // ⭐ 3. VINCULAR LA INSTANCIA (INYECCIÓN DE DEPENDENCIA) ⭐
-            // Esto resuelve el problema del 'bot is null' en el ChatController.
-            mainController.setBot(bot); 
-
-            // 4. Iniciar la conexión al servidor IRC
-            try {
-                // Conectar al servidor principal
-                bot.connect(SERVER); 
-            } catch (IOException e) {
-                // Manejar error de conexión
-                System.err.println("❌ ERROR: No se pudo conectar al servidor IRC " + SERVER);
-                e.printStackTrace();
-            }
-        } else {
-             System.err.println("❌ ERROR: No se pudo obtener la instancia del ChatController.");
+        if (mainChatController == null) {
+             System.err.println("❌ ERROR: No se pudo obtener la instancia del ChatController. La aplicación no continuará.");
+             return;
         }
+        
+        // ⭐ IMPORTANTE: Ahora, el ChatController NO tiene un Bot o conexión inicial.
+        // El ChatController tiene la responsabilidad de crear el ChatBot y conectar
+        // cuando reciba los parámetros (servidor/nick) del formulario de conexión.
 
+        // 3. Mostrar la ventana principal
         primaryStage.show();
         
-        tbController.abrirVentanaConexionDesdeInicio();
+        // 4. Abrir la ventana de conexión (FormularioConexion.fxml)
+        // El tbController debe abrir la ventana e inyectarle el mainChatController
+        tbController.abrirVentanaConexionDesdeInicio(mainChatController);
     }
+    
+    // NOTA: Debes asegurarte de que el método abrirVentanaConexionDesdeInicio 
+    // en ToolBarController ahora acepta un ChatController y lo inyecta en el ConexionController.
 
     public static void main(String[] args) {
         launch(args);

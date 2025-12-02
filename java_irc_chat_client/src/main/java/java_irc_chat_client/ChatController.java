@@ -367,8 +367,7 @@ public class ChatController {
     }
 
     
-  
- // Dentro de ChatController.java (Método regenerado)
+ 
 
     /**
      * Configura el factory de celdas para la lista de usuarios conocidos (knownUsersListView).
@@ -1357,7 +1356,7 @@ public void agregarCanalAbierto(String channelName) throws IOException {
     // ------------------ CONEXIÓN IRC ------------------
     // Dentro de ChatController.java (Asegúrate de que 'server' y 'nickname' sean variables de instancia)
 
- // Dentro de ChatController.java
+ 
 
     public void connectToIRC() {
         // 1. Verificación: Si ya estamos conectados, no hacemos nada.

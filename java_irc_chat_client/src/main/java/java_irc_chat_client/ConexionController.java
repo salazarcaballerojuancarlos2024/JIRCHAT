@@ -472,7 +472,7 @@ public class ConexionController {
 
 
 
- // Dentro de ConexionController.java
+ 
 
     @FXML
     private void onConectar(ActionEvent event) {
