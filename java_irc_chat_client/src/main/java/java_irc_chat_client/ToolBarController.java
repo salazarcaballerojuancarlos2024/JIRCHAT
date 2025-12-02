@@ -49,6 +49,8 @@ public class ToolBarController {
     public ChatController getChatController() { return chatController; }
     
     private ListView<UsuarioConocido> knownUsersListView;
+    
+    
 
     @FXML
     private Button btnUserList;
@@ -292,24 +294,7 @@ public class ToolBarController {
         }
     }
 
-    /**
-     * Abre la ventana de chat y vincula las floating windows al primaryStage.
-     */
- 
-
- /**
-  * Abre la ventana de chat e inicializa la UI izquierda.
-  * MODIFICADO: Ahora construye el Accordion y lo añade DEBAJO del botón "Status".
-  */
- // Dentro de ToolBarController.java
-
-    /**
-     * Abre la ventana de chat e inicializa la UI izquierda con el botón "Status"
-     * y el Accordion para Canales/Privados, vinculando las floating windows al primaryStage.
-     */
- // En ToolBarController.java
-
- // 🚨 La firma ha cambiado de 'void' a 'ChatController'
+    
  @FXML
  public ChatController abrirChat(Stage primaryStage) {
      // Si ya está abierto, devolvemos la instancia existente.
@@ -436,27 +421,30 @@ public class ToolBarController {
         }
     }
     
-    
-    
+
     @FXML
     private void abrirVentanaListadodeCanales() {
+        // 1. Verificar la conexión inmediatamente
+        ChatBot bot = chatController.getBot();
+        if (bot == null || !bot.isConnected()) {
+            chatController.appendSystemMessage("⚠ No hay conexión IRC activa o no está completa. No se puede listar canales.");
+            return; 
+        }
+        
         try {
             FXMLLoader loader = new FXMLLoader(getClass().getResource("JIRCHAT_LISTA_DE_CANALES.fxml"));
             Parent root = loader.load();
 
             CanalesListController controller = loader.getController();
             
-            ChatBot bot = chatController.getBot();
-            if (bot != null) {
-                // Ya se asume que CanalesListController.setBot() acepta ChatBot.
-                controller.setBot(bot); 
-            } else {
-                 chatController.appendSystemMessage("⚠ No hay conexión IRC activa.");
-                 return; 
-            }
+            // ⭐ ACCIÓN CLAVE: Unificar la inicialización y la carga.
+            // Llamamos al método setBot, que ahora es responsable de:
+            // 1. Almacenar el bot y el chatController.
+            // 2. Inicializar las listas filtradas/ordenadas.
+            // 3. Llamar a bot.getCanales(handler) para iniciar la solicitud LIST.
+            controller.setBot(bot, chatController); // Pasamos bot y chatController
             
-            controller.setChatController(chatController); 
-
+            // 4. Mostrar la ventana (la carga de datos ocurrirá de fondo y poblará la tabla)
             Stage stage = new Stage();
             stage.setTitle("Listado de Canales");
             stage.setScene(new Scene(root));

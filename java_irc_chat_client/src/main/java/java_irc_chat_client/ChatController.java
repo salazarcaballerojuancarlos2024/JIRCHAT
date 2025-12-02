@@ -682,6 +682,7 @@ public void agregarCanalAbierto(String channelName) throws IOException {
     public void abrirPrivado(String nick) {
         // Usamos el nick como clave de log y como título de ventana
         final String logName = nick; 
+        final int LINEAS_HISTORIAL = 10; // Definimos el límite de 10 mensajes
 
         try {
             // 1. Cargar el FXML
@@ -692,15 +693,26 @@ public void agregarCanalAbierto(String channelName) throws IOException {
             // 2. Configurar el controlador
             privadoController.setDestinatario(nick);
             privadoController.setBot(this.bot);
-            privadoController.setMainController(this);
+            privadoController.setMainController(this); // Necesario para callbacks, p.ej. abrirVentanaPrivado
 
-            // 3. ⭐ INTEGRACIÓN DEL LOGGING: Cargar el historial
-            // Se asume que ChatLogger.cargarHistorial(nick) devuelve List<String>
-            List<String> historial = ChatLogger.cargarHistorial(logName);
+            // 3. ⭐ INTEGRACIÓN DEL LOGGING: Cargar los ÚLTIMOS 10 mensajes
+            // Usamos el método readLastLines del ChatLogger para obtener solo las últimas 10 líneas.
+            List<String> historial = ChatLogger.readLastLines(logName, LINEAS_HISTORIAL);
             
-            // Usar el método SIN LOGGING (appendRawLogLine) para mostrar cada línea del historial
-            for (String linea : historial) {
-                privadoController.appendRawLogLine(linea); 
+            if (historial != null && !historial.isEmpty()) {
+                // Mostrar mensaje de inicio de historial (usando appendSystemMessage del PrivadoController)
+                privadoController.appendSystemMessage("--- Historial (últimos " + historial.size() + " mensajes) ---");
+                
+                // Usar el método SIN LOGGING (appendRawLogLine) para mostrar cada línea del historial
+                for (String linea : historial) {
+                    privadoController.appendRawLogLine(linea); 
+                }
+                
+                // Mostrar mensaje de fin de historial
+                privadoController.appendSystemMessage("-----------------------------------");
+            } else {
+                // Notificar que no hay historial si la lista está vacía o nula.
+                privadoController.appendSystemMessage("--- No se encontró historial para " + nick + " ---");
             }
 
             // 4. Crear la ventana (Stage)
@@ -708,26 +720,23 @@ public void agregarCanalAbierto(String channelName) throws IOException {
             stage.setTitle("Chat Privado con " + nick);
             stage.setScene(new Scene(root));
             
-            // ⭐ CONFIGURACIÓN CONSOLIDADA DEL CIERRE (SOLO UNA VEZ)
-            // Esto garantiza que la limpieza se ejecute cuando se pulsa la 'X'.
+            // ⭐ CONFIGURACIÓN CONSOLIDADA DEL CIERRE (Limpieza de referencias)
             stage.setOnCloseRequest(event -> {
-                // Cuando la ventana se cierra, el evento 'stage.close()' se ejecuta automáticamente
-                // DESPUÉS de este handler, por lo que solo necesitamos la limpieza de referencias.
-                // Usamos 'cerrarPrivado' para eliminar el botón y limpiar todo el estado.
                 cerrarPrivado(nick); 
-                
-                // Nota: Aquí NO hacemos stage.close(), ya que la 'X' de la ventana lo hará por sí misma.
+                // Aquí se asume que cerrarPrivado limpia privateChats y el botón del panel lateral.
             });
             
             // 5. Almacenar la referencia y mostrar
-            // Asumiendo que 'privateChats' es un Map<String, Stage> en ChatController
-            privateChats.put(nick, stage); 
+            // Usamos la clave en minúsculas si el mapa privateChats es case-insensitive (como se recomienda)
+            privateChats.put(nick.toLowerCase(), stage); 
 
-            // ⭐ INTEGRACIÓN DEL BOTÓN EN EL PANEL IZQUIERDO
-            // Se asume que este método crea y añade el botón al panel lateral.
+            // ⭐ Almacenamos el controlador para poder acceder a él desde onPrivateMessageRemoto
+            privateChatsController.put(nick.toLowerCase(), privadoController); 
+
+            // 6. Integración del botón en el panel izquierdo (si existe)
             agregarBotonCanalPrivadoDcc(nick, stage, "privado");
 
-            // 6. Mostrar la ventana
+            // 7. Mostrar la ventana
             stage.show();
             
             // Llamar a initializeChat (o autoScroll) para asegurar el scroll al final del historial cargado
@@ -738,7 +747,6 @@ public void agregarCanalAbierto(String channelName) throws IOException {
             e.printStackTrace();
         }
     }
-
 
  // Dentro de ChatController.java
 
@@ -1042,14 +1050,26 @@ public void agregarCanalAbierto(String channelName) throws IOException {
         abrirPrivado(nick);
     }
 
-    public void abrirChatPrivadoConMensaje(String nick, String mensaje) {
-        if (privateChats.containsKey(nick)) {
-            privateChats.get(nick).toFront();
-            appendPrivateMessage(nick, mensaje, false);
-            return;
-        }
-        mostrarSolicitudPrivado(nick, mensaje);
-    }
+ // Dentro de ChatController.java
+
+ // ⭐ SIMPLIFICACIÓN: Este método ya no es necesario si onPrivateMessageRemoto 
+ // gestiona correctamente los mensajes entrantes. 
+ // Pero si se usa para mensajes generados internamente (ej. /query nick), lo ajustamos.
+
+ public void abrirChatPrivadoConMensaje(String nick, String mensaje) {
+     final String key = nick.toLowerCase();
+     
+     if (privateChats.containsKey(key) && privateChats.get(key).isShowing()) {
+         // Ventana abierta, solo enviamos el mensaje.
+         privateChats.get(key).toFront();
+         // El mensaje entrante es falso (no es mío), lo loguea el ChatController
+         appendPrivateMessage(nick, mensaje, false); 
+         return;
+     }
+     
+     // Si no existe, usamos el flujo de solicitud, que es el que gestiona la carga del log.
+     mostrarSolicitudPrivado(nick, mensaje);
+ }
     
     private void mostrarSolicitudPrivado(String nick, String mensaje) {
         if (Boolean.TRUE.equals(solicitudPendiente.get(nick))) {
@@ -1177,34 +1197,56 @@ public void agregarCanalAbierto(String channelName) throws IOException {
 
     private void scrollToBottom(ScrollPane sp) { Platform.runLater(() -> sp.setVvalue(1.0)); }
 
- // Dentro de ChatController.java
+    /**
+     * Carga el historial del log al abrir una ventana de chat privado.
+     */
+    public void loadPrivateLog(PrivadoController controller, String nickRemoto) {
+        // 1. Verificar si el log existe y tiene líneas
+        // ChatLogger.getLogFileName(nickRemoto) debe devolver el nombre del archivo de log.
+        List<String> lastMessages = ChatLogger.readLastLines(nickRemoto, 10);
+        
+        if (lastMessages != null && !lastMessages.isEmpty()) {
+            controller.appendSystemMessage("--- Historial (últimos " + lastMessages.size() + " mensajes) ---");
+            
+            // 2. Insertar cada línea del log en el chatBox del privado.
+            for (String line : lastMessages) {
+                // Usamos appendRawLogLine del PrivadoController para que no intente loguear de nuevo.
+                controller.appendRawLogLine(line);
+            }
+            controller.appendSystemMessage("---------------------------------------");
+        }
+    }
 
     /**
      * 📥 Maneja la recepción de un mensaje privado del servidor.
      * Registra el mensaje en el log ANTES de mostrarlo en la UI.
      */
     public void onPrivateMessageRemoto(String nick, String mensaje) {
+        final String key = nick.toLowerCase();
         
-        // ⭐ 1. LOGGING: Registrar el mensaje entrante. 
-        // Usamos el nick del remitente como el nombre del fichero log.
-        // El usuario es el remitente (nick).
+        // ⭐ 1. Logging: Registrar el mensaje entrante antes de cualquier acción de UI.
         ChatLogger.log(nick, nick, mensaje); 
         
-        // ------------------------------------------------------------------
-        
-        // 2. Lógica de UI (Mostrar la ventana o notificar)
-        if (privateChats.containsKey(nick.toLowerCase())) {
-            // La ventana ya está abierta: la traemos al frente y delegamos la visualización.
-            privateChats.get(nick.toLowerCase()).toFront();
+        // 2. Lógica de UI (Mostrar la ventana o notificar/popup)
+        if (privateChats.containsKey(key) && privateChats.get(key).isShowing()) {
+            // Ventana ABIERTA y VISIBLE:
+            // Traemos al frente y solo delegamos el mensaje al controlador de esa ventana.
+            privateChats.get(key).toFront();
             
-            // 3. Delegar la visualización: 
-            // ¡IMPORTANTE! appendPrivateMessage DEBE ASEGURARSE DE OBTENER EL CONTROLADOR
-            // Y LLAMAR AL MÉTODO DEL CONTROLADOR (ej. privadoController.appendMessage),
-            // Y ese método appendMessage AHORA DEBE ESTAR LIBRE DE LÓGICA DE LOGGING.
+            // El tercer argumento (false) asegura que NO se muestre el popup ni se haga logging duplicado.
             appendPrivateMessage(nick, mensaje, false); 
             
         } else {
-            // La ventana no está abierta: notificamos al usuario para que la abra.
+            // Ventana NO ABIERTA o CERRADA:
+            
+            // Si la ventana existe en el mapa pero no se está mostrando (Caso 2 del abrirChatPrivado), 
+            // la limpiamos para evitar referencias a Stages cerrados.
+            if (privateChats.containsKey(key)) {
+                cerrarPrivado(nick); // Limpiamos el mapa y el controller map
+            }
+            
+            // ⭐ La función clave: Llamamos al método que gestiona el popup.
+            // El mensaje recibido se incluye en el popup y luego se muestra en la ventana al aceptar.
             mostrarSolicitudPrivado(nick, mensaje);
         }
     }

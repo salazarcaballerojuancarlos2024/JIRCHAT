@@ -41,6 +41,10 @@ public class ChatBot extends PircBot {
     private final ChatController mainController;
     
     // --- CAMPOS PARA LA LISTA DE CANALES ---
+ 
+    private final List<Canal> canalesDisponibles = new ArrayList<>(); 
+    // Referencia al Consumer de la UI (para sincronización final, opcional)
+    private Consumer<List<Canal>> listFinalReceiver = null;
     private Consumer<Canal> currentListReceiver;
     private Runnable currentListEndCallback;
     private boolean isListingChannels = false;
@@ -67,7 +71,21 @@ public class ChatBot extends PircBot {
  
     private ChatController chatController;
 
- // Dentro de ChatBot.java
+ // Nuevo método para lanzar la lista y configurar el receptor final
+    public void getCanales(Consumer<List<Canal>> finalReceiver) {
+        if (isListingChannels) {
+            // Ya está en curso, evita lanzar múltiples veces
+            return;
+        }
+        
+        // 1. Limpiar la lista anterior y configurar el receptor final
+        this.canalesDisponibles.clear();
+        this.listFinalReceiver = finalReceiver;
+        this.isListingChannels = true;
+        
+        // 2. Enviar el comando al servidor
+        this.listChannels(); // Este es el método de PircBot que envía "LIST"
+    }
 
  // ⭐ 1. Lista global de todos los nicks conectados al servidor. 
  // Mantenida y actualizada por los eventos JOIN/QUIT.
@@ -78,6 +96,15 @@ public class ChatBot extends PircBot {
 
  // ⭐ 3. Bandera para controlar la fase de sincronización inicial (JOIN/PART secuencial).
  private boolean isSyncingChannel = false;
+ 
+
+private boolean ircLoginCompleted = false; // Nueva bandera de estado
+
+
+//Método que debe reemplazar a bot.isConnected() para la UI
+public boolean isIrcLoginCompleted() {
+  return ircLoginCompleted;
+}
  
 //⭐ CONSTRUCTOR REQUERIDO ⭐
  public ChatBot(ChatController controller, String nick, String login) {
@@ -1041,253 +1068,244 @@ public boolean isNickOnServer(String nick) {
         
         joinChannel(nextChannel); 
     }
+ 
+ // Dentro de ChatBot.java
+
     @Override
     protected void onServerResponse(int code, String response) {
-        
-        // ⭐ NO HAY Platform.runLater ENVOLVIENDO TODO.
-        // Esta sección se ejecuta en el hilo de red de PircBot.
+        super.onServerResponse(code, response); 
 
-        if (mainController == null) return;
+        // ======================================================================
+        // ⭐ 1. LÓGICA DE SINCRONIZACIÓN DE CANALES (LIST - 322/323)
+        // ======================================================================
+        if (isListingChannels) {
+            switch (code) {
+         
+
+            case 322: // RPL_LIST: Respuesta de un canal
+                
+                // Si la bandera de listado no está activa, salimos inmediatamente.
+                if (!isListingChannels) return; 
+
+                // Usaremos el 'response' sin el prefijo 322 que PircBot ya eliminó.
+                // Formato esperado: <nickname> <#canal> <usuarios> :[modos...] <topic>
+
+                try {
+                    // Usamos el split en la respuesta original (sin códigos de color) para obtener los tokens fijos.
+                    String[] fullParts = response.split(" ");
+                    
+                    if (fullParts.length < 4) { 
+                        log.warn("Formato 322 incompleto (menos de 4 tokens). Línea: {}", response);
+                        return;
+                    }
+
+                    // 1. Extracción de Nombre de Canal (Índice 1)
+                    String canalNombre = fullParts[1];
+                    
+                    if (!canalNombre.startsWith("#")) {
+                        // Fallback si el índice 1 no es el canal.
+                        canalNombre = ""; 
+                        for (int i = 1; i < fullParts.length; i++) {
+                            if (fullParts[i].startsWith("#")) {
+                                canalNombre = fullParts[i];
+                                break;
+                            }
+                        }
+                        if (canalNombre.isEmpty()) {
+                            log.warn("No se encontró el nombre del canal (#) en la línea: {}", response);
+                            return;
+                        }
+                    }
+                    
+                    // 2. Extracción de Número de Usuarios (Índice 2)
+                    String usersRaw = (fullParts.length > 2) ? fullParts[2] : ""; 
+                    int numUsuarios = 0;
+                    
+                    try {
+                        numUsuarios = Integer.parseInt(usersRaw);
+                    } catch (NumberFormatException e) {
+                        log.warn("Formato numUsuarios desconocido en 322: '{}' para canal {}", usersRaw, canalNombre);
+                        return; 
+                    }
+
+                    // **A partir de aquí, usamos la línea LIMPIA para Modos y Descripción.**
+                    String cleanedResponse = stripIrcFormatting(response);
+
+                    // 3. Extracción de Modos o Permisos (Basado en ':[...]' )
+                    String modos = "[Sin modos]";
+                    
+                    int modeStart = cleanedResponse.indexOf(":["); 
+                    
+                    if (modeStart != -1) {
+                        int modeEnd = cleanedResponse.indexOf("]", modeStart);
+                        
+                        if (modeEnd != -1) {
+                            // Extraemos la cadena completa (ej. ":[+Cnrt]").
+                            String modosFull = cleanedResponse.substring(modeStart, modeEnd + 1).trim();
+                            
+                            // Eliminamos el prefijo si existe. Ej. "[+Cnrt]"
+                            if (modosFull.startsWith(":")) {
+                                modos = modosFull.substring(1); 
+                            } else {
+                                modos = modosFull;
+                            }
+                        }
+                    }
+
+                 
+                 // Dentro de ChatBot.java -> onServerResponse() -> case 322:
+
+                 // ... [CÓDIGO ANTERIOR PARA EXTRACCIÓN DE CANAL, USUARIOS Y MODOS] ...
+
+                         // 4. Extracción de Descripción (Topic) con tu regla específica:
+                         String descripcionBruta;
+                         String descripcionFinal = "[Sin tema]";
+                         
+                         final int MAX_LENGTH = 140;
+                         final String SUFFIX = ".....";
+
+                         // Paso 4a: Encontrar el punto de inicio de la descripción según tu regla.
+                         // Regla: "todo lo que haya desde el final de la cadena hasta encontrarse con la primer carácter ']'"
+                         
+                         int closingBracketIndex = cleanedResponse.lastIndexOf(']');
+                         
+                         if (closingBracketIndex != -1 && closingBracketIndex < cleanedResponse.length() - 1) {
+                             // La descripción comienza *después* del ']'
+                             descripcionBruta = cleanedResponse.substring(closingBracketIndex + 1).trim();
+                             
+                             // Paso 4b: Aplicar el Recorte de 40 caracteres a la descripciónBruta
+                             if (descripcionBruta.length() > MAX_LENGTH) {
+                                 // Si es más larga que 40, recortamos y añadimos el sufijo.
+                                 descripcionFinal = descripcionBruta.substring(0, MAX_LENGTH) + SUFFIX;
+                             } else if (!descripcionBruta.isEmpty()) {
+                                 // Si es 40 o menos, usamos la descripción completa.
+                                 descripcionFinal = descripcionBruta;
+                             }
+                         }
+                         
+                         // Fallback: Si no se encuentra ']', o está al final, volvemos a la lógica estándar
+                         // de buscar el último ':' después del número de usuarios.
+                         if (descripcionFinal.equals("[Sin tema]")) {
+                             
+                              // Buscamos el ':' que sigue al número de usuarios (fullParts[2])
+                              int usersEndIndex = cleanedResponse.indexOf(fullParts[2]);
+                              
+                              if (usersEndIndex != -1) {
+                                  int colonTopicStart = cleanedResponse.indexOf(":", usersEndIndex);
+                                  
+                                  if (colonTopicStart != -1 && colonTopicStart + 1 < cleanedResponse.length()) {
+                                      descripcionBruta = cleanedResponse.substring(colonTopicStart + 1).trim();
+                                      
+                                      // Aplicamos el recorte al Fallback
+                                      if (descripcionBruta.length() > MAX_LENGTH) {
+                                          descripcionFinal = descripcionBruta.substring(0, MAX_LENGTH) + SUFFIX;
+                                      } else if (!descripcionBruta.isEmpty()) {
+                                          descripcionFinal = descripcionBruta;
+                                      }
+                                  }
+                              }
+                         }
+
+                         // 5. Crear objeto y almacenar en la lista global
+                         final Canal canal = new Canal(canalNombre, numUsuarios, modos, descripcionFinal); 
+                         
+                         log.info("📊 PARSEADO OK: Canal={}, Usuarios={}, Modos={}, Desc={}", canalNombre, numUsuarios, modos, descripcionFinal);
+
+                         // Envío seguro al hilo de JavaFX
+                         Platform.runLater(() -> {
+                             canalesDisponibles.add(canal); 
+                         });
+
+                     
+
+                } catch (Exception e) {
+                    log.error("Error FATAL al parsear 322: {}", response, e);
+                }
+                return;
+
+                    
+             // Dentro de ChatBot.java -> onServerResponse(int code, String response)
+
+            case 323: // RPL_LISTEND: Fin de la lista de canales
+                log.info("✅ Recibido 323: Fin de la lista de canales. Total: {} canales.", canalesDisponibles.size());
+                
+                isListingChannels = false;
+                
+                // Notificamos a la UI con la lista COMPLETA de una sola vez
+                final Consumer<List<Canal>> finalReceiver = this.listFinalReceiver;
+                final List<Canal> listaFinal = new ArrayList<>(canalesDisponibles); // Copia segura
+                
+                Platform.runLater(() -> {
+                    if (finalReceiver != null) { 
+                        finalReceiver.accept(listaFinal); // Envía toda la lista
+                    }
+                    this.listFinalReceiver = null; // Anulamos el receptor
+                });
+                
+                return;
+            }
+            // Si estábamos en isListingChannels pero el código no era 322/323, continúa abajo.
+        }
         
-        // Las variables solo se declararán aquí si son necesarias para lógica no-UI,
-        // pero generalmente es más seguro declararlas dentro de los bloques case.
-        
+        // ======================================================================
+        // ⭐ 2. LÓGICA DE CONTROL DE ESTADO, SINCRONIZACIÓN GLOBAL Y USUARIOS
+        // ======================================================================
         switch (code) {
             
-            // ==================================================================
-            // 1. Lógica CRÍTICA de SINCRONIZACIÓN (Ejecución Directa en Hilo de Bot)
-            // ==================================================================
-            
-        case 323: // End of LIST (RPL_LISTEND)
-            
-            // 1. Desactivamos el flag de listado
-            isListingChannels = false;
-            
-            log.info("📊 Fin de la lista de canales. Total de canales a sincronizar (JOIN/PART): {}", channelsToSync.size());
-            
-            // ⭐ NUEVA LÓGICA CLAVE: INICIAR LA SECUENCIA JOIN/PART ⭐
-            
-            if (!channelsToSync.isEmpty()) {
-                // Si hay canales en la cola (llenos por el 322), iniciamos el proceso de JOINS secuenciales.
-                // La finalización de la UI se moverá a finalizeGlobalSync().
-                processNextSyncChannel(); 
-            } else {
-                // Si no se encontró ningún canal para sincronizar (vacío), finalizamos la sincronización global.
-                finalizeGlobalSync(); 
-            }
-            
-            break;
-            
-        // --- Manejo de Errores de JOIN (Necesario para la sincronización) ---
-        case 473: // ERR_INVITEONLYCHAN
-        case 474: // ERR_BANNEDFROMCHAN
-        case 475: // ERR_BADCHANNELKEY
-            
-            final String[] errorTokens = response.split(" ");
-            final String channelFailed = errorTokens.length >= 2 ? errorTokens[1] : "Canal Desconocido";
-
-            // Si el error ocurre durante la fase de JOINS/PARTS secuenciales:
-            if (isSyncingChannel) {
-                log.warn("⚠️ Saltando canal {} en sincronización debido a error {}: {}", channelFailed, code, response);
-                
-                // La clave es avanzar al siguiente canal de la cola
-                processNextSyncChannel(); 
-            }
-            break;
-                
-            
-
-            case 322: // Respuesta LIST (RPL_LIST): Datos de un canal
-                
-                // Declaración de variables dentro del case
-                String[] tokens;
-                
-                if (isListingChannels) {
-                    try {
-                        // --- INICIO del PARSEO (pesado) ---
-                        String botNick = getNick();
-                        int startOfDataIndex = response.indexOf(botNick);
-                        
-                        if (startOfDataIndex == -1) break; 
-                        
-                        String dataPart = response.substring(startOfDataIndex + botNick.length()).trim();
-                        tokens = dataPart.split(" ", 4); 
-
-                        if (tokens.length < 3) break; 
-
-                        final String channelName = tokens[0]; // <<< Variable 'effectively final' utilizada
-                        final int userCount = Integer.parseInt(tokens[1]); 
-                        
-                        String modos = "";
-                        String topic = "";
-
-                        if (tokens.length == 4) {
-                            modos = tokens[2];
-                            topic = tokens[3].startsWith(":") ? tokens[3].substring(1).trim() : tokens[3];
-                        } else if (tokens.length == 3) {
-                            topic = tokens[2].startsWith(":") ? tokens[2].substring(1).trim() : tokens[2];
-                        }
-
-                        if (!modos.isEmpty() && !modos.startsWith("+")) modos = "+" + modos;
-                        
-                        // Crear el objeto Canal AQUÍ
-                        final Canal canal = new Canal(channelName, userCount, modos, topic); 
-                        // --- FIN del PARSEO (pesado) ---
-
-                        // ⭐ SOLO EL PASO FINAL de UI va en Platform.runLater
-                        Platform.runLater(() -> {
-                            // Usamos la variable 'channelName' (que es final) o 'canal.getChannelName()'
-                            // Si la clase Canal tiene el método, usamos el método. Si no, usamos la variable.
-                            
-                            // Mantenemos la verificación usando la variable que ya creaste.
-                            if (currentListReceiver != null && channelName.startsWith("#")) { 
-                                currentListReceiver.accept(canal); 
-                            }
-                        });
-
-                    } catch (Exception e) {
-                        log.error("Error al parsear respuesta 322: {}", response, e);
-                    }
+            // ⭐⭐ MOVIDO AQUÍ PARA ACTIVAR EL LOGIN COMPLETED ⭐⭐
+            case 001: // RPL_WELCOME - ¡El login ya está confirmado!
+            case 376: // RPL_ENDOFMOTD - Fin del mensaje del día.
+                if (!ircLoginCompleted) {
+                    log.info("✅ IRC Login confirmado con código {}. Habilitando isIrcLoginCompleted.", code);
+                    this.ircLoginCompleted = true; // ⭐ ACTIVACIÓN DE LA BANDERA
                 }
                 break;
-                
-             
 
             case 352: // WHO Reply (RPL_WHOREPLY)
-                
-                // 1. Parseamos la respuesta
+                // Lógica para parsear 352 y añadir el nick a connectedNicks
                 final String[] whoTokens = response.split(" "); 
-                
-                // Verificamos el formato mínimo
                 if (whoTokens.length >= 7) { 
-                    
-                    // 2. Extraer y hacer finales las partes esenciales
-                    final String username = whoTokens[2];         
-                    final String hostname = whoTokens[3];         
-                    final String server = whoTokens[4];         
-                    final String nickName = whoTokens[5]; // ⭐ NICKNAME ⭐      
-                    final String flags = whoTokens[6];         
-
-                    int realNameStartIndex = response.indexOf(":");
-                    final String rawRealName = (realNameStartIndex != -1) ? 
-                        response.substring(realNameStartIndex + 1).trim() : "";
-                    
-                    final String realName = rawRealName.startsWith("0 ") ? 
-                        rawRealName.substring(2).trim() : rawRealName; 
-
-                    // 3. Crear el objeto IRCUser fuera del hilo de UI
-                    final IRCUser user = new IRCUser(nickName, username + "@" + hostname, flags, server, realName);
-
-                    // ⭐ 4. ALMACENAMIENTO DE NICKNAME EN LA LISTA GLOBAL ⭐
-                    // Esto asegura que el nick esté en tu lista maestra para el resaltado en verde.
-                    // Usamos toLowerCase() para la comparación insensible a mayúsculas/minúsculas.
+                    final String nickName = whoTokens[5];
                     connectedNicks.add(nickName.toLowerCase()); 
-                    
-                    // 🚨 Si también usas un Map<String, IRCUser> para datos completos (e.g., knownUsers), agrégalo aquí:
-                    // knownUsers.put(nickName.toLowerCase(), user);
-
-
-                    // --- LÓGICA DE NOTIFICACIÓN A LA UI (Platform.runLater) ---
-                    Platform.runLater(() -> {
-                        // 5. Notificar al controlador que está ejecutando el WHO.
-                        if (activeLWhoController != null) {
-                            try {
-                                activeLWhoController.receiveUser(user);
-                            } catch (Exception e) {
-                                log.error("Error al procesar respuesta 352 en UI: {}", response, e);
-                            }
-                        }
-                    });
-                } else {
-                    log.warn("Respuesta 352 incompleta: {}", response);
                 }
+                break; 
+                 
+            case 315: // End of WHO List (RPL_ENDOFWHO)
+                log.info("✅ Recibido 315: Sincronización global de nicks completada. Total: {}", connectedNicks.size());
                 
-                break;
-
-            	case 315: // End of WHO List (RPL_ENDOFWHO)
-                
-                // ... (tu lógica de parseo) ...
-
-                // ⭐⭐ LÍNEA DE DEBUG DEL TAMAÑO AQUÍ (DONDE SE CONFIRMA EL LLENADO) ⭐⭐
-                log.info("Tamaño de connectedNicks después de WHO global: {}", connectedNicks.size());
-                
-                // 1. ANULAR EL BUCLE LENTO DE JOIN/PART
-                // Si el WHO global ya llenó la lista, la sincronización por canal ya no es necesaria.
-                channelsToSync.clear(); 
-                isSyncingChannel = false; 
-                
-                // --- LÓGICA DE UI EN PLATFORM.runLater ---
                 Platform.runLater(() -> {
-                    
-                    // 2. Notificar al controlador de la UI que la sincronización ha terminado
                     if (mainController != null) {
-                        mainController.syncFinished(); // Habilita el TextField y finaliza el estado de carga
+                        mainController.syncFinished(); // Refresca la lista global de conocidos.
                     }
-                    
-                    // ... (otras finalizaciones) ...
                 });
                 break;
 
-             // ... otros casos ...
-            case 353: // NAMES Reply (Contiene la lista de usuarios del canal)
-            case 366: // End of NAMES (Fin de la lista de usuarios del canal)
-                
-                // 1. Parseamos los tokens en el hilo de background.
-                final String[] nameTokens = response.split(" ");
-                final int finalCode = code; 
-                final String finalResponse = response; 
-                
-                // 2. Determinamos el canal de manera final, dependiendo del código de respuesta.
-                String tempNamesChannel = null;
+            // ======================================================================
+            // ⭐ 3. LÓGICA DE USUARIOS EN CANAL (NAMES - 353/366)
+            // ======================================================================
+            case 353: // NAMES Reply (RPL_NAMREPLY)
+            case 366: { // End of NAMES (RPL_ENDOFNAMES)
+                final String namesChannel = (code == 353 && response.split(" ").length >= 5) ? 
+                                             response.split(" ")[4] : 
+                                           (code == 366 && response.split(" ").length >= 4) ? 
+                                             response.split(" ")[3] : null;
 
-                if (code == 353 && nameTokens.length >= 5) {
-                    // Formato 353: :server 353 nick = #channel :@user +user user
-                    tempNamesChannel = nameTokens[4];
-                } else if (code == 366 && nameTokens.length >= 4) {
-                     // Formato 366: :server 366 nick #channel :End of /NAMES list.
-                     tempNamesChannel = nameTokens[3];
-                }
-
-                final String namesChannel = tempNamesChannel; 
-
-                // ======================================================================
-                // ⭐ LÓGICA DE CONTROL DE SINCRONIZACIÓN GLOBAL (AQUÍ USAMOS EL 366) ⭐
-                // ======================================================================
-                if (finalCode == 366 && isSyncingChannel && namesChannel != null) {
-                    log.info("✅ 366 (End of NAMES) recibido para {}. Es la señal para salir.", namesChannel);
-                    
-                    // 3. ENVIAR EL PART: Esto es necesario para avanzar al siguiente canal.
-                    // La llamada a processNextSyncChannel() se hará en el onPart() subsiguiente.
-                    partChannel(namesChannel);
-                    
-                    // Devolvemos el control para que el código de delegación del CanalController no se ejecute, 
-                    // ya que estamos en una fase de sincronización especial.
-                    // Si el CanalController necesita saber que se terminó el 366, podríamos mantener la llamada delegada, 
-                    // pero por seguridad durante la sincronización temporal, lo ignoramos.
-                    return; 
-                }
-                
-                // ======================================================================
-                // LÓGICA DE DELEGACIÓN ESTÁNDAR (Actualización de la ventana del canal)
-                // Se ejecuta solo si NO estamos sincronizando O si el código no es 366 
-                // y estamos esperando el NAMES (353) para una ventana abierta.
-                // ======================================================================
                 if (namesChannel != null && namesDelegates.containsKey(namesChannel)) {
+                    final CanalController delegate = namesDelegates.get(namesChannel);
+                    final int finalCode = code;
                     
-                    // --- LÓGICA DE UI EN PLATFORM.runLater ---
                     Platform.runLater(() -> {
-                        
-                        CanalController delegate = namesDelegates.get(namesChannel);
-                        if (delegate != null) {
-                            // Pasamos los valores finales ya calculados.
-                            delegate.handleNamesResponse(finalCode, finalResponse);
-                        }
+                        delegate.handleNamesResponse(finalCode, response);
                     });
+
+                    if (code == 366) {
+                        log.info("Canal {} sincronizado. Nicks enviados al controlador.", namesChannel);
+                    }
                 }
                 break;
-                
+            } 
+
             default:
-                // No hace nada por defecto
                 break;
         }
     }
@@ -1363,6 +1381,18 @@ public boolean isNickOnServer(String nick) {
             log.error("❌ Error al intentar resolver el quiz anti-bot: {}", quizMessage, e);
         }
         return null;
+    }
+    
+ // Añade esta función a tu clase ChatBot
+    private String stripIrcFormatting(String text) {
+        if (text == null) {
+            return "";
+        }
+        // 1. Eliminar códigos de color ([0-9]{0,2}(,[0-9]{0,2})?)
+        text = text.replaceAll("\\u0003\\d{0,2}(,\\d{0,2})?", "");
+        // 2. Eliminar otros códigos de formato (negrita, subrayado, inversa, restablecer)
+        text = text.replaceAll("[\\u0002\\u001f\\u0016\\u000f]", "");
+        return text;
     }
     
     /**
