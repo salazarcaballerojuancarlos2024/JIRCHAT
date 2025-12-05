@@ -521,89 +521,119 @@ public void actualizarContadorUsuarios(String channelName, int count) {
 * @throws IOException Si falla la carga del FXML.
 */
 public void agregarCanalAbierto(String channelName) throws IOException {
- final String key = channelName.toLowerCase();
- 
- // 1. Evitar duplicados y comprobar si ya está abierta
- if (!canalesUnidos.contains(channelName)) {
-     canalesUnidos.add(channelName);
- }
- if (canalesAbiertos.containsKey(key)) {
-     CanalVentana existente = canalesAbiertos.get(key);
-     if (existente != null && existente.stage != null) {
-         // Si ya está abierta, la trae al frente y termina la ejecución
-         existente.stage.toFront();
-     }
-     return;
- }
+    final String key = channelName.toLowerCase();
+    
+    // 1. Evitar duplicados y comprobar si ya está abierta
+    if (!canalesUnidos.contains(channelName)) {
+        canalesUnidos.add(channelName);
+    }
 
- // 2. Crear y cargar la nueva ventana (Stage) del canal
- try {
-     FXMLLoader loader = new FXMLLoader(getClass().getResource("/java_irc_chat_client/JIRCHAT_CANAL.fxml"));
-     Parent root = loader.load();
-     CanalController canalController = loader.getController();
+    if (canalesAbiertos.containsKey(key)) {
+        CanalVentana existente = canalesAbiertos.get(key);
+        
+        // Aseguramos que el Stage y el Controller existen antes de proceder.
+        if (existente != null && existente.stage != null && existente.controller != null) {
+            
+            // ⭐ INICIO DE LA CORRECCIÓN CRÍTICA (REAPERTURA) ⭐
+            
+            // 1. LIMPIEZA DEL ESTADO: Limpiar historial y lista de usuarios (asumiendo CanalController.clearState() existe)
+            existente.controller.clearState(); 
+            
+            // 2. Traer la ventana al frente
+            existente.stage.toFront();
+            
+            // 3. RE-REGISTRO DEL CONTROLADOR EXISTENTE COMO DELEGADO
+            if (this.bot != null) {
+                // ESTO ES VITAL: Re-registrar el controlador existente. Si el bot utiliza
+                // esta misma delegación para enrutar mensajes de chat (PRIVMSG) y la lista
+                // de usuarios (NAMES), al re-registrarlo se soluciona la pérdida de mensajes.
+                this.bot.registerNamesDelegate(channelName, existente.controller); 
 
-     // 3. Configurar el controlador y la lógica de negocio
-     canalController.setCanal(channelName);
-     canalController.setBot(this.bot); 
-     canalController.setMainController(this);
-     
-     // ⭐ PASO CRÍTICO: INYECCIÓN PARA EL RESALTADO VERDE ⭐
-     // 3.1. Obtener el Set de nicks conocidos locales (transformados a minúsculas)
-     Set<String> nicksConocidos = getLocalKnownNicksSet(); 
-     
-     // 3.2. Inyectar el Set en el controlador del canal
-     // (El CanalController usa este Set en su CellFactory)
-     canalController.setKnownNicksSet(nicksConocidos); 
-     // -------------------------------------------------------------------
+                // 4. LÓGICA DE RECONEXIÓN: Forzar NAMES o JOIN para obtener la lista de usuarios.
+                if (this.bot.isJoined(channelName)) { 
+                    this.bot.sendRawLine("NAMES " + channelName); 
+                } else {
+                    this.bot.joinChannel(channelName); 
+                }
+            }
+            
+            // ⭐ FIN DE LA CORRECCIÓN CRÍTICA ⭐
+            
+            return; // Terminar la ejecución de la reapertura
+        }
+        // Si el wrapper, stage o controller eran nulos, eliminamos la referencia corrupta
+        // y continuamos creando una nueva ventana (comportamiento por defecto del código).
+        canalesAbiertos.remove(key); 
+    }
 
-     if (this.bot != null) {
-         // Registrar el controlador como delegado para manejar las respuestas de NAMES
-         this.bot.registerNamesDelegate(channelName, canalController); 
-     }
-     
-     // 4. Crear la ventana (Stage)
-     Stage stage = new Stage();
-     stage.setTitle(channelName + " - " + bot.getNick()); // Usar getNick() del bot
-     stage.setScene(new Scene(root));
+    // --------------------------------------------------------------------------------
+    // Lógica para ABRIR NUEVO CANAL (Se mantiene la lógica original)
+    // --------------------------------------------------------------------------------
 
-     // 5. Almacenar la ventana y el controlador en el mapa
-     CanalVentana nuevoWrapper = new CanalVentana(stage, canalController);
-     canalesAbiertos.put(key, nuevoWrapper);
-     
-     // 6. INTEGRACIÓN DEL BOTÓN Y MANEJO DE CIERRE
-     agregarBotonCanalPrivadoDcc(channelName, stage, "canal");
-     
-     // Configuración del evento de cierre (al pulsar la 'X')
-     stage.setOnCloseRequest(event -> {
-         if (this.bot != null) {
-             this.bot.partChannel(channelName);
-             appendSystemMessage("👋 Has abandonado el canal " + channelName); 
-             // Desregistrar el delegado al cerrar
-             this.bot.registerNamesDelegate(channelName, null); 
-         }
-         // Limpiar el botón y las referencias en la UI
-         removerBotonCanal(channelName);
-         cerrarCanalDesdeVentana(channelName); 
-     });
-     
-     // 7. Mostrar la ventana y lógica condicional JOIN/NAMES
-     stage.show();
+    // 2. Crear y cargar la nueva ventana (Stage) del canal
+    try {
+        FXMLLoader loader = new FXMLLoader(getClass().getResource("/java_irc_chat_client/JIRCHAT_CANAL.fxml"));
+        Parent root = loader.load();
+        CanalController canalController = loader.getController();
 
-     if (this.bot != null) {
-         // Si ya estamos unidos (ej: reconexión), solo pedimos la lista de usuarios.
-         if (this.bot.isJoined(channelName)) { 
-             this.bot.sendRawLine("NAMES " + channelName); 
-         } else {
-             // Si no estamos unidos (ej: /join manual), nos unimos.
-             this.bot.joinChannel(channelName); 
-         }
-     }
-     
- } catch (IOException e) {
-     System.err.println("Error al intentar abrir la ventana del canal " + channelName + ": " + e.getMessage());
-     e.printStackTrace();
-     throw e;
- }
+        // 3. Configurar el controlador y la lógica de negocio
+        canalController.setCanal(channelName);
+        canalController.setBot(this.bot); 
+        canalController.setMainController(this);
+        
+        // ⭐ INYECCIÓN PARA EL RESALTADO VERDE ⭐
+        Set<String> nicksConocidos = getLocalKnownNicksSet(); 
+        canalController.setKnownNicksSet(nicksConocidos); 
+        // -------------------------------------------------------------------
+
+        if (this.bot != null) {
+            // Registrar el controlador como delegado para manejar las respuestas de NAMES (y mensajes de chat, si el bot usa este mismo delegado)
+            this.bot.registerNamesDelegate(channelName, canalController); 
+        }
+        
+        // 4. Crear la ventana (Stage)
+        Stage stage = new Stage();
+        stage.setTitle(channelName + " - " + bot.getNick());
+        stage.setScene(new Scene(root));
+
+        // 5. Almacenar la ventana y el controlador en el mapa
+        CanalVentana nuevoWrapper = new CanalVentana(stage, canalController);
+        canalesAbiertos.put(key, nuevoWrapper);
+        
+        // 6. INTEGRACIÓN DEL BOTÓN Y MANEJO DE CIERRE
+        agregarBotonCanalPrivadoDcc(channelName, stage, "canal");
+        
+        // Configuración del evento de cierre (al pulsar la 'X')
+        stage.setOnCloseRequest(event -> {
+            if (this.bot != null) {
+                this.bot.partChannel(channelName);
+                appendSystemMessage("👋 Has abandonado el canal " + channelName); 
+                // Desregistrar el delegado al cerrar
+                this.bot.registerNamesDelegate(channelName, null); 
+            }
+            // Limpiar el botón y las referencias en la UI
+            removerBotonCanal(channelName);
+            cerrarCanalDesdeVentana(channelName); 
+        });
+        
+        // 7. Mostrar la ventana y lógica condicional JOIN/NAMES
+        stage.show();
+
+        if (this.bot != null) {
+            // Si ya estamos unidos (ej: reconexión), solo pedimos la lista de usuarios.
+            if (this.bot.isJoined(channelName)) { 
+                this.bot.sendRawLine("NAMES " + channelName); 
+            } else {
+                // Si no estamos unidos (ej: /join manual), nos unimos.
+                this.bot.joinChannel(channelName); 
+            }
+        }
+        
+    } catch (IOException e) {
+        System.err.println("Error al intentar abrir la ventana del canal " + channelName + ": " + e.getMessage());
+        e.printStackTrace();
+        throw e;
+    }
 }
     
  // Nuevo método a añadir en ChatController.java
@@ -1621,5 +1651,75 @@ public void agregarCanalAbierto(String channelName) throws IOException {
                 .map(u -> u.getNick().toLowerCase()) 
                 .collect(java.util.stream.Collectors.toSet());
     }
+    
+
+    /**
+     * Notifica a todas las ventanas de canal abiertas que un usuario ha salido del servidor (QUIT) o canal (PART),
+     * y actualiza el estado de conexión global (ListView principal) y los ListViews de los canales.
+     * * Se llama desde ChatBot.onQuit (canal=null) o ChatBot.onPart (canal=#nombre).
+     * * @param nick El nick del usuario que ha salido.
+     * @param canal Si es null o vacío, se asume un QUIT (salida del servidor) y se revisan todos los canales.
+     */
+    public void notificarSalidaUsuario(String nick, String canal) {
+        
+        final boolean isQuit = (canal == null || canal.isEmpty());
+
+        // 1. Mostrar el mensaje de sistema en la ventana principal (Status Box).
+        String mensaje = isQuit 
+            ? "« " + nick + " ha abandonado IRC (QUIT)"
+            : "« " + nick + " ha abandonado el canal " + canal;
+
+        appendSystemMessage(mensaje);
+        
+        // ⭐ 2. GESTIÓN DEL LISTVIEW PRINCIPAL (Fondo verde de usuario CONECTADO) ⭐
+        // Solo actualizamos el estado global a 'desconectado' si es una SALIDA DEL SERVIDOR (QUIT).
+        if (isQuit) {
+            // updateConnectionStatus(nick, false) quita el sombreado verde del usuario 
+            // en la lista principal y lo marca internamente como desconectado.
+            updateConnectionStatus(nick, false); 
+        }
+        // Si es un PART, el usuario sigue conectado al servidor. El fondo verde en la lista principal permanece.
+        
+        // 3. Recorrer todas las ventanas de canal abiertas (Actualización de ListViews de canal)
+        Platform.runLater(() -> {
+            
+            // El mapa canalesAbiertos contiene todas las instancias de CanalController
+            for (Map.Entry<String, CanalVentana> entry : canalesAbiertos.entrySet()) {
+                CanalController controller = entry.getValue().controller;
+                String nombreCanalAbierto = entry.getKey();
+                
+                if (controller == null) continue;
+                
+                // Lógica de eliminación:
+                
+                // A) Es un evento QUIT: Afecta a TODOS los canales (eliminación física).
+                if (isQuit) { 
+                    
+                    // Eliminar al usuario físicamente de la lista de cualquier canal que lo contenga.
+                    controller.removeUserFromList(nick);
+                    
+                    // Opcional: Mostrar el mensaje de QUIT en el VBox del canal.
+                    controller.appendSystemMessage("« " + nick + " ha salido del servidor.", 
+                                                  CanalController.MessageType.PART, 
+                                                  nick);
+                    
+                } 
+                
+                // B) Es un evento PART: Solo afecta al canal de salida (eliminación física).
+                else if (nombreCanalAbierto.equalsIgnoreCase(canal)) {
+                     
+                     // Eliminar al usuario físicamente de la lista del canal afectado.
+                     controller.removeUserFromList(nick);
+                     
+                     // Mostrar el mensaje de PART en el VBox del canal.
+                     controller.appendSystemMessage("« " + nick + " ha abandonado el canal.", 
+                                                   CanalController.MessageType.PART, 
+                                                   nick);
+                }
+            }
+        });
+    }
+    
+ 
     
 }

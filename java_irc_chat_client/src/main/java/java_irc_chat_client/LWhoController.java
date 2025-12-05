@@ -106,16 +106,25 @@ public class LWhoController {
      * @param user El objeto IRCUser detallado.
      */
     public void receiveUser(IRCUser user) {
-        // El ChatBot debe asegurar que esta llamada está en Platform.runLater.
-        // Si no estás seguro, envuélvelo en Platform.runLater aquí también.
-        
-        // Manteniendo el código que te causaba el error (ahora debe funcionar si ChatBot lo llama en FX Thread)
-        users.add(user);
-        
-        Window window = userTable.getScene().getWindow();
-        if (window instanceof Stage) {
-            Stage stage = (Stage) window;
-            stage.setTitle("Usuarios en " + currentChannel + " (" + users.size() + " cargados)");
+        if (user != null) {
+            
+            // ⭐ LOG DE DIAGNÓSTICO: CONFIRMAR QUE LLEGAN LOS DATOS CORRECTAMENTE
+            System.out.println("✅ LWHO RECIBIDO Y AÑADIDO: Nick: " + user.getNick() + 
+                               ", UserHost: " + user.getUserHost() + 
+                               ", RealName: " + user.getRealName());
+            
+            // Si la aplicación fallara aquí, envuelve el contenido en Platform.runLater
+            if (Platform.isFxApplicationThread()) {
+                users.add(user);
+            } else {
+                 Platform.runLater(() -> users.add(user));
+            }
+            
+            Window window = userTable.getScene().getWindow();
+            if (window instanceof Stage) {
+                Stage stage = (Stage) window;
+                stage.setTitle("Usuarios en " + currentChannel + " (" + users.size() + " cargados)");
+            }
         }
     }
 

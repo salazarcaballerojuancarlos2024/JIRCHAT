@@ -10,6 +10,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
+// Importaciones necesarias para la funcionalidad Desktop.open()
+import java.awt.Desktop; 
+import java.awt.Desktop.Action; 
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,16 +51,54 @@ public class ChatLogger {
         return new BufferedWriter(new FileWriter(logFile, true));
     }
     
+ // Dentro de ChatLogger.java
+
     /**
-     * Obtiene el objeto File para un log específico.
-     * @param logFileName El nombre del archivo (ej: "canal_general" o "nickremoto").
+     * Obtiene el objeto File para un log específico. Implementa una búsqueda dual:
+     * 1. Intenta encontrar el archivo sin prefijo '#' (para privados o si el controlador pasó el nombre limpio).
+     * 2. Si no lo encuentra, prueba añadiendo el prefijo '#' (para logs de canales).
+     * * @param logFileName El nombre del archivo (ej: "canal_general" o "nickremoto"). 
+     * Se asume que viene sin el prefijo '#' si es un canal.
      * @return El objeto File.
      */
     private static File getLogFile(String logFileName) {
-        // Tu lógica original usa el Path completo; simplificado aquí para usar LOGS_DIR.
-        // Aseguramos que el nombre del log sea en minúsculas para consistencia en la clave.
-        return new File(LOGS_DIR, logFileName.toLowerCase() + ".log"); 
+        // 1. Normalizar el nombre a minúsculas (ej: "el_jardin_musical")
+        String baseName = logFileName.toLowerCase(); 
+
+        // 2. Intento 1: Buscar el archivo SIN el prefijo '#' (para privados o si la escritura se corrigió)
+        File fileWithoutHash = new File(LOGS_DIR, baseName + ".log");
+        
+        // Si el archivo existe con el nombre limpio, lo devolvemos inmediatamente.
+        if (fileWithoutHash.exists()) {
+            return fileWithoutHash; 
+        }
+
+        // 3. Intento 2: Buscar el archivo CON el prefijo '#' (para canales que fueron guardados con el '#')
+        // Nota: El logFileName que llega aquí ya no tiene el '#'.
+        String fileNameWithHash = "#" + baseName + ".log";
+        File fileWithHash = new File(LOGS_DIR, fileNameWithHash);
+
+        // Si el archivo existe con el '#'
+        if (fileWithHash.exists()) {
+            return fileWithHash;
+        }
+        
+        // 4. Si no se encuentra ninguno, devolvemos el objeto File que *debería* existir.
+        // Usaremos el formato con '#' por defecto para los canales si el intento de escritura falló, 
+        // pero si el logFileName no es un canal, puede que estemos devolviendo un objeto File incorrecto.
+        // Para no romper la funcionalidad de escritura, devolvemos el que tiene el '#', 
+        // y la función de llamada (openLogFile) reportará la NO EXISTENCIA.
+        // Puesto que el error ocurre en la búsqueda (lectura), devolver el que no existe causará el error esperado en openLogFile.
+        
+        // Devolvemos el path con el hash. Si no existe, la función openLogFile lo detectará.
+        return fileWithHash;
     }
+
+    // Nota: Los métodos de escritura (log, logSystem) siguen usando getWriter(name) 
+    // que llama a getLogFile(name). Si la escritura usa el nombre del canal con '#' 
+    // y el controlador lo pasa sin '#', puede haber una pequeña inconsistencia si lo que se escribe 
+    // es diferente de lo que se busca. Por eso se hizo la búsqueda dual.
+    // Idealmente, el controlador de logueo debería ser el único responsable de la limpieza del nombre.
 
     // ==========================================================
     // 1. FUNCIONALIDADES DE ESCRITURA (EXISTENTES)
@@ -96,12 +138,11 @@ public class ChatLogger {
     }
     
     // ==========================================================
-    // 2. FUNCIONALIDAD DE LECTURA DE HISTORIAL (NUEVAS Y MODIFICADAS)
+    // 2. FUNCIONALIDAD DE LECTURA DE HISTORIAL
     // ==========================================================
 
     /**
-     * 📥 CARGA MODIFICADA: Lee las últimas 'count' líneas de un log específico (Eficiente).
-     * Esta funcionalidad sustituye a 'cargarHistorial' en contextos donde se requiere un historial corto.
+     * Lee las últimas 'count' líneas de un log específico (Eficiente).
      * @param logFileName El nombre del archivo de log (ej: "nickremoto").
      * @param count El número máximo de líneas a leer desde el final.
      * @return Una lista de Strings que contienen las últimas líneas del log, en orden cronológico.
@@ -162,7 +203,7 @@ public class ChatLogger {
     }
 
     /**
-     * Carga el historial de mensajes COMPLETO de un canal o chat privado (Mantiene la funcionalidad original).
+     * Carga el historial de mensajes COMPLETO de un canal o chat privado.
      * @param name Nombre del canal o usuario (sin extensión).
      * @return Una lista de cadenas, donde cada cadena es una línea del log.
      */
@@ -183,7 +224,7 @@ public class ChatLogger {
     }
     
     // ==========================================================
-    // 3. FUNCIONALIDADES DE BÚSQUEDA Y LISTADO (EXISTENTES)
+    // 3. FUNCIONALIDADES DE BÚSQUEDA Y LISTADO
     // ==========================================================
 
     /** Lista todos los logs disponibles */
@@ -223,6 +264,61 @@ public class ChatLogger {
         } catch (IOException e) {
             log.error("Error I/O al buscar contenido en log {}: {}", file.getName(), e.getMessage());
             return false;
+        }
+    }
+    
+    // ==========================================================
+    // 4. ⭐ FUNCIONALIDAD DE APERTURA EN EL SISTEMA (NUEVA) ⭐
+    // ==========================================================
+
+    /**
+     * Abre el archivo de log en el editor de texto predeterminado del sistema operativo.
+     * @param logFileName El nombre del archivo de log (ej: "canal_general").
+     * @return true si se pudo ejecutar la apertura, false en caso contrario.
+     */
+    public static boolean openLogFile(String logFileName) {
+        File logFile = getLogFile(logFileName);
+
+        if (!logFile.exists()) {
+            log.warn("El archivo de log {} no existe.", logFile.getName());
+            return false;
+        }
+
+        try {
+            // Intenta usar java.awt.Desktop para una solución más limpia y multiplataforma
+            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Action.OPEN)) {
+                Desktop.getDesktop().open(logFile);
+                log.info("Abriendo log {} con el editor predeterminado del sistema (Desktop).", logFile.getName());
+                return true;
+            } else {
+                // Fallback: usar Runtime.exec si Desktop no está disponible o soportado
+                String os = System.getProperty("os.name").toLowerCase();
+                String command = null;
+
+                if (os.contains("win")) {
+                    command = "notepad " + logFile.getAbsolutePath(); // Windows
+                } else if (os.contains("mac")) {
+                    command = "open " + logFile.getAbsolutePath();     // macOS
+                } else if (os.contains("nix") || os.contains("nux")) {
+                    command = "xdg-open " + logFile.getAbsolutePath(); // Linux/Unix
+                }
+
+                if (command != null) {
+                    Runtime.getRuntime().exec(command);
+                    log.warn("Abriendo log {} usando Runtime.exec. Plataforma: {}", logFile.getName(), os);
+                    return true;
+                } else {
+                    log.error("Apertura de log no soportada para este SO.");
+                    return false;
+                }
+            }
+        } catch (IOException e) {
+            log.error("Error I/O al intentar abrir el log {}: {}", logFile.getName(), e.getMessage());
+            return false;
+        } catch (UnsupportedOperationException e) {
+             log.error("La operación Desktop.open no es soportada por la plataforma. Intentando fallback...", e);
+             // Si Desktop falla por no ser soportado, el flujo del código debe continuar al Runtime.exec (si se puede)
+             return false;
         }
     }
 }

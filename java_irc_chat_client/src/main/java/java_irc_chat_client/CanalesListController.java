@@ -157,162 +157,179 @@ public class CanalesListController {
     // Asegúrate de eliminar el antiguo setBot(ChatBot) y setChatController(ChatController)
     // si existían como métodos separados.
 
- @FXML
- public void initialize() {
-     // --- 1. CONFIGURACIÓN DE COLUMNAS (Mapeo de Propiedades) ---
-     
-     colCanal.setCellValueFactory(data -> data.getValue().nombreProperty());
-     colPermisos.setCellValueFactory(data -> data.getValue().modosProperty());
-     colUsuarios.setCellValueFactory(data -> data.getValue().numUsuariosProperty().asObject());
-     colDescripcion.setCellValueFactory(data -> data.getValue().descripcionProperty());
-     
-     // ⭐ Configuración del CellFactory para la descripción (manejo de colores IRC)
-     colDescripcion.setCellFactory(col -> new TableCell<Canal, String>() {
-         private final TextFlow textFlow = new TextFlow();
-         {
-             textFlow.setPrefHeight(24);
-             textFlow.setMinHeight(24);
-             textFlow.setMaxHeight(24);
-             textFlow.setLineSpacing(0);
-         }
+ // Dentro de CanalesListControler.java
 
-         @Override
-         protected void updateItem(String item, boolean empty) {
-             super.updateItem(item, empty);
-             if (empty || item == null) {
-                 setGraphic(null);
-             } else {
-                 textFlow.getChildren().clear();
-                 // Asumo que parseIRCText está definido en CanalesListController
-                 textFlow.getChildren().addAll(parseIRCText(item)); 
-                 textFlow.prefWidthProperty().bind(colDescripcion.widthProperty().subtract(10));
-                 setGraphic(textFlow);
-             }
-         }
-     });
+    @FXML
+    public void initialize() {
+        // --- 1. CONFIGURACIÓN DE COLUMNAS (Mapeo de Propiedades) ---
+        
+        colCanal.setCellValueFactory(data -> data.getValue().nombreProperty());
+        colPermisos.setCellValueFactory(data -> data.getValue().modosProperty());
+        colUsuarios.setCellValueFactory(data -> data.getValue().numUsuariosProperty().asObject());
+        colDescripcion.setCellValueFactory(data -> data.getValue().descripcionProperty());
+        
+        // Configuración del CellFactory para la descripción (manejo de colores IRC)
+        colDescripcion.setCellFactory(col -> new TableCell<Canal, String>() {
+            private final TextFlow textFlow = new TextFlow();
+            {
+                textFlow.setPrefHeight(24);
+                textFlow.setMinHeight(24);
+                textFlow.setMaxHeight(24);
+                textFlow.setLineSpacing(0);
+            }
 
-     // ----------------------------------------------------------------------
-     // ⭐ 2. LÓGICA DE FILTRADO Y ORDENACIÓN (Configuración de Listener)
-     // ----------------------------------------------------------------------
-     
-     // NOTA CLAVE: La inicialización de FilteredList y SortedList (pasos 1, 3 y 4 anteriores)
-     // se ha movido al método setBot() para garantizar que 'canales' esté cargado.
-     
-     // 2a. Vincular el TextField de búsqueda al predicado de filtrado
-     txtBusqueda.textProperty().addListener((observable, oldValue, newValue) -> {
-         // Debemos asegurarnos de que filteredCanales haya sido inicializado en setBot()
-         if (filteredCanales != null) {
-             filteredCanales.setPredicate(canal -> {
-                 // Si el campo de búsqueda está vacío, muestra todos los canales.
-                 if (newValue == null || newValue.isEmpty()) {
-                     return true;
-                 }
-                 
-                 // FILTRADO REAL: Compara el nombre del canal con la cadena de búsqueda.
-                 String lowerCaseFilter = newValue.toLowerCase();
-                 return canal.getNombre().toLowerCase().contains(lowerCaseFilter);
-             });
-             // Forzamos un refresco visual después de filtrar para asegurar el resaltado
-             Platform.runLater(canalesTable::refresh);
-         }
-     });
-     
-     // 2b. Configurar la ordenación predeterminada (Nombre Canal, ascendente)
-     // Esto se mantiene aquí porque es una configuración de la tabla, no de los datos.
-     canalesTable.getSortOrder().clear(); 
-     colCanal.setSortType(TableColumn.SortType.ASCENDING);
-     canalesTable.getSortOrder().add(colCanal); 
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setGraphic(null);
+                } else {
+                    textFlow.getChildren().clear();
+                    // Asumo que parseIRCText está definido en CanalesListController
+                    // Si parseIRCText genera nodos Text (correctamente), esto funcionará.
+                    textFlow.getChildren().addAll(parseIRCText(item)); 
+                    textFlow.prefWidthProperty().bind(colDescripcion.widthProperty().subtract(10));
+                    setGraphic(textFlow);
+                }
+            }
+        });
 
-     // --- MANEJO DEL BOTÓN DE BÚSQUEDA ---
-     btnBuscar.setOnAction(e -> canalesTable.refresh());
+        // ----------------------------------------------------------------------
+        // ⭐ 2. LÓGICA DE FILTRADO Y ORDENACIÓN (Configuración de Listener)
+        // ----------------------------------------------------------------------
+        
+        // 2a. Vincular el TextField de búsqueda al predicado de filtrado
+        txtBusqueda.textProperty().addListener((observable, oldValue, newValue) -> {
+            // filteredCanales debe inicializarse en setBot() o donde se cargan los datos.
+            if (filteredCanales != null) {
+                filteredCanales.setPredicate(canal -> {
+                    // Si el campo de búsqueda está vacío, muestra todos los canales.
+                    if (newValue == null || newValue.isEmpty()) {
+                        return true;
+                    }
+                    
+                    // FILTRADO REAL: Compara el nombre del canal con la cadena de búsqueda.
+                    String lowerCaseFilter = newValue.toLowerCase();
+                    return canal.getNombre().toLowerCase().contains(lowerCaseFilter);
+                });
+                // Forzamos un refresco visual después de filtrar.
+                Platform.runLater(canalesTable::refresh);
+            }
+        });
+        
+        // 2b. Configurar la ordenación predeterminada (Nombre Canal, ascendente)
+        canalesTable.getSortOrder().clear(); 
+        colCanal.setSortType(TableColumn.SortType.ASCENDING);
+        canalesTable.getSortOrder().add(colCanal); 
+
+        // --- MANEJO DEL BOTÓN DE BÚSQUEDA (Refresca la tabla) ---
+        btnBuscar.setOnAction(e -> canalesTable.refresh());
 
 
-     // --- 3. COMPORTAMIENTO DE FILAS (RowFactory) ---
-     canalesTable.setRowFactory(tv -> {
-         TableRow<Canal> row = new TableRow<>() {
-             @Override
-             protected void updateItem(Canal item, boolean empty) {
-                 super.updateItem(item, empty);
-                 setPrefHeight(24);
-                 setMinHeight(24);
-                 setMaxHeight(24);
+        // --- 3. COMPORTAMIENTO DE FILAS (RowFactory) ---
+        canalesTable.setRowFactory(tv -> {
+            TableRow<Canal> row = new TableRow<>() {
+                @Override
+                protected void updateItem(Canal item, boolean empty) {
+                    super.updateItem(item, empty);
+                    setPrefHeight(24);
+                    setMinHeight(24);
+                    setMaxHeight(24);
 
-                 if (empty || item == null) {
-                     setStyle("");
-                 } else {
-                     // Lógica para determinar el resaltado
-                     String search = txtBusqueda.getText();
-                     boolean matchesSearch = search != null && !search.isEmpty() && 
-                                             item.getNombre().toLowerCase().contains(search.toLowerCase());
+                    if (empty || item == null) {
+                        setStyle("");
+                    } else {
+                        // Lógica para determinar el resaltado
+                        String search = txtBusqueda.getText();
+                        boolean matchesSearch = search != null && !search.isEmpty() && 
+                                                item.getNombre().toLowerCase().contains(search.toLowerCase());
 
-                     // ⭐ RESALTADO EN VERDE: Si coincide con el filtro de búsqueda
-                     if (matchesSearch) {
-                         setStyle("-fx-background-color: #39FF14;"); // verde fosforito
-                     } else if (getIndex() % 2 == 0) {
-                         setStyle("-fx-background-color: #FFF8DC;"); // vainilla (Par)
-                     } else {
-                         setStyle("-fx-background-color: #ADD8E6;"); // azul claro (Impar)
-                     }
-                 }
-             }
-         };
-         
-         // --- ⭐ MANEJO DEL CLIC IZQUIERDO (Doble Clic para Unirse) ---
-         row.setOnMouseClicked(event -> {
-             if (event.getClickCount() == 2 && !row.isEmpty() && event.getButton().equals(MouseButton.PRIMARY)) {
-                 Canal canal = row.getItem();
-                 if (chatController != null && canal != null) {
-                     Platform.runLater(() -> {
-                         try {
-                             chatController.agregarCanalAbierto(canal.getNombre());
-                             // Cierre de ventana opcional
-                             if (canalesTable.getScene().getWindow() instanceof Stage) {
-                                 ((Stage) canalesTable.getScene().getWindow()).close(); 
-                             }
-                         } catch (IOException e) {
-                             e.printStackTrace();
-                             Alert alert = new Alert(Alert.AlertType.ERROR, "No se pudo abrir el canal: " + e.getMessage(), ButtonType.OK);
-                             alert.setTitle("Error al abrir canal");
-                             alert.showAndWait();
-                         }
-                     });
-                 }
-             }
-         });
+                        // ⭐ RESALTADO: Si coincide con el filtro de búsqueda
+                        if (matchesSearch) {
+                            setStyle("-fx-background-color: #39FF14;"); // verde fosforito
+                        } else if (getIndex() % 2 == 0) {
+                            setStyle("-fx-background-color: #FFF8DC;"); // vainilla (Par)
+                        } else {
+                            setStyle("-fx-background-color: #ADD8E6;"); // azul claro (Impar)
+                        }
+                    }
+                }
+            };
+            
+            // --- ⭐ MANEJO DEL CLIC IZQUIERDO (Doble Clic para Unirse) ---
+            row.setOnMouseClicked(event -> {
+                if (event.getClickCount() == 2 && !row.isEmpty() && event.getButton().equals(MouseButton.PRIMARY)) {
+                    Canal canal = row.getItem();
+                    if (chatController != null && canal != null) {
+                        Platform.runLater(() -> {
+                            try {
+                                chatController.agregarCanalAbierto(canal.getNombre());
+                                // Cierre de ventana opcional
+                                if (canalesTable.getScene().getWindow() instanceof Stage) {
+                                    ((Stage) canalesTable.getScene().getWindow()).close(); 
+                                }
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                                Alert alert = new Alert(Alert.AlertType.ERROR, "No se pudo abrir el canal: " + e.getMessage(), ButtonType.OK);
+                                alert.setTitle("Error al abrir canal");
+                                alert.showAndWait();
+                            }
+                        });
+                    }
+                }
+            });
 
-         // --- ⭐ MANEJO DEL CLIC DERECHO (Menú Contextual) ---
-         final ContextMenu rowMenu = new ContextMenu();
-         
-         // Opción 1: /Lwho (Listar usuarios con detalles)
-         MenuItem lwhoItem = new MenuItem("/Lwho (Listar Usuarios)");
-         lwhoItem.setOnAction(event -> {
-             Canal canal = row.getItem();
-             if (canal != null && chatController != null && bot != null) {
-                 chatController.abrirVentanaLwho(canal.getNombre());
-             }
-         });
+            // --- ⭐ MANEJO DEL CLIC DERECHO (Menú Contextual) ---
+            final ContextMenu rowMenu = new ContextMenu();
+            
+            // Opción 1: /Lwho (Listar usuarios con detalles)
+            MenuItem lwhoItem = new MenuItem("/Lwho (Listar Usuarios)");
+            lwhoItem.setOnAction(event -> {
+                Canal canal = row.getItem();
+                if (canal != null && chatController != null) {
+                    chatController.abrirVentanaLwho(canal.getNombre());
+                }
+            });
 
-         // Opción 2: Ver log
-         MenuItem logItem = new MenuItem("Ver log");
-         logItem.setOnAction(event -> {
-             Canal canal = row.getItem();
-             if (chatController != null && canal != null) {
-                 chatController.appendSystemMessage("➡️ Solicitado log para el canal: " + canal.getNombre());
-             }
-         });
-         
-         rowMenu.getItems().addAll(lwhoItem, logItem);
+            // Opción 2: Ver log
+            MenuItem logItem = new MenuItem("Ver log");
+            logItem.setOnAction(event -> {
+                Canal canal = row.getItem();
+                if (canal != null && chatController != null) {
+                    
+                    String channelName = canal.getNombre();
+                    
+                    // 1. Obtener el nombre del log (sin '#' y en minúsculas)
+                    String logFileName = channelName.startsWith("#") 
+                                         ? channelName.substring(1).toLowerCase() 
+                                         : channelName.toLowerCase();
+                    
+                    // 2. Notificar al usuario (feedback)
+                    chatController.appendSystemMessage("➡️ Solicitado abrir log para: " + channelName);
+                    
+                    // 3. LLAMADA CRÍTICA: Abrir el archivo de log
+                    boolean success = ChatLogger.openLogFile(logFileName);
+                    
+                    if (success) {
+                        chatController.appendSystemMessage("✅ Log abierto correctamente.");
+                    } else {
+                        chatController.appendSystemMessage("❌ ERROR: No se pudo abrir el log '" + logFileName + ".log'.");
+                    }
+                }
+            });
+            
+            rowMenu.getItems().addAll(lwhoItem, logItem);
 
-         // Mostrar el menú contextual solo si la fila NO está vacía
-         row.contextMenuProperty().bind(
-             row.emptyProperty().map(empty -> empty ? null : rowMenu)
-         );
+            // Mostrar el menú contextual solo si la fila NO está vacía
+            row.contextMenuProperty().bind(
+                row.emptyProperty().map(empty -> empty ? null : rowMenu)
+            );
 
-         return row;
-     });
+            return row;
+        });
 
-     canalesTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
- }
+        canalesTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+    }
     // -----------------------------------------------------------
     // Método auxiliar para parseo de colores IRC (Mantenido)
     // -----------------------------------------------------------

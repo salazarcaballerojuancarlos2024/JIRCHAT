@@ -310,21 +310,44 @@ public class CanalController {
         }
     }
 
+ // Dentro de CanalController.java
+
     private void handleCommand(String cmd) {
         if (bot == null) return;
 
         if (cmd.startsWith("part")) {
-            bot.partChannel(channelName); // Usar channelName
+            // 1. Enviar el comando PART al servidor IRC
+            bot.partChannel(channelName); 
+            
+            // ⭐ PASO CRÍTICO: LIMPIEZA DEL ESTADO INTERNO DEL BOT ⭐
+            // Debemos asegurar que el ChatBot sepa que YA NO está en este canal, 
+            // para que la próxima vez que se use /join, el bot ejecute JOIN y no solo NAMES.
+            if (bot instanceof ChatBot) {
+                // Asumiendo que has implementado este método en tu ChatBot para eliminar
+                // el canal de su Set interno de canales unidos (ej: joinedChannels.remove(channelName.toLowerCase()))
+                ((ChatBot)bot).removeChannelFromJoinedState(channelName); 
+            }
+
+            // 2. Notificar a la UI que estamos saliendo
             appendSystemMessage("➡ Saliendo de " + channelName, MessageType.PART, bot.getNick());
-            if (mainController != null) Platform.runLater(() -> mainController.cerrarCanalDesdeVentana(channelName));
+            
+            // 3. Notificar al ChatController para cerrar la ventana del canal
+            if (mainController != null) {
+                // Utilizamos Platform.runLater ya que cerraremos componentes de UI (Stage)
+                Platform.runLater(() -> mainController.cerrarCanalDesdeVentana(channelName));
+            }
+
         } else if (cmd.startsWith("msg ")) {
             String[] parts = cmd.split(" ", 3);
             if (parts.length >= 3) {
+                // Comando /msg <nick> <mensaje>
                 bot.sendMessage(parts[1], parts[2]); 
             }
         } else if (cmd.startsWith("me ")) {
-            bot.sendAction(channelName, cmd.substring(3).trim()); // Usar channelName
+            // Comando /me <acción>
+            bot.sendAction(channelName, cmd.substring(3).trim()); 
         } else {
+            // Cualquier otro comando (ej. /nick, /mode, etc.)
             bot.sendRawLine(cmd); 
         }
     }
@@ -653,6 +676,28 @@ public class CanalController {
         // Forzamos la actualización del ListView para aplicar el nuevo color, 
         // ya que los datos de la lista ya existen.
         Platform.runLater(() -> userListView_canal.refresh()); 
+    }
+    
+ // En CanalController.java (Asegúrate de que este método está implementado)
+    public void clearState() {
+        Platform.runLater(() -> {
+            // 1. Limpia el historial visual (VBox que contiene los TextFlows)
+            if (chatBox != null) {
+                chatBox.getChildren().clear(); 
+            }
+            
+            // 2. Limpia la lista de usuarios vinculada al ListView
+            usersList.clear(); 
+            
+            // 3. Restablece contadores y estados lógicos
+            updateUserCount(0);
+            nickCache.clear();
+            currentMatches.clear();
+            matchIndex = -1;
+            lastPrefix = null;
+            currentNamesList.clear();
+            receivingNames = false;
+        });
     }
 
 } 

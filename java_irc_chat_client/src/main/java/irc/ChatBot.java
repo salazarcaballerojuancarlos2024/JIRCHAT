@@ -68,6 +68,7 @@ public class ChatBot extends PircBot {
     // Usaremos un mapa simple si permitimos múltiples consultas WHO,
     // pero por simplicidad, usaremos una sola referencia activa.
     private LWhoController activeLWhoController; 
+    private String whoQueryChannel;
  
     private ChatController chatController;
 
@@ -161,12 +162,31 @@ public boolean isNickOnServer(String nick) {
   return false; // Nick no encontrado en ningún canal
 }
 
- // Método para que LWhoController se registre y envíe la consulta
- public void requestWhoList(String channel, LWhoController controller) {
-     if (!isConnected()) return;
-     this.activeLWhoController = controller; // Guardamos la referencia para callbacks
-     sendRawLine("WHO " + channel);
- }
+//Dentro de ChatBot.java
+
+/**
+* Inicia la consulta WHO al servidor para el canal dado y establece el delegado receptor.
+* (Tu LWhoController llama a este método).
+*/
+public void requestWhoList(String channel, LWhoController controller) {
+  if (!isConnected()) return;
+  
+  // ⭐ Almacenar el delegado y el canal de la consulta ⭐
+  this.activeLWhoController = controller; 
+  this.whoQueryChannel = channel;
+  
+  sendRawLine("WHO " + channel);
+  log.debug("Enviado comando WHO para: {}", channel);
+}
+
+/**
+* Limpia el estado de la consulta WHO después de recibir 315.
+*/
+private void clearWhoDelegate() {
+ this.activeLWhoController = null;
+ this.whoQueryChannel = null;
+ log.debug("Delegado WHO limpiado.");
+}
     
     
     
@@ -443,9 +463,12 @@ public boolean isNickOnServer(String nick) {
  // EVENTOS DE CONEXIÓN Y DESCONEXIÓN
  // ==========================================================
 
+ // Dentro de ChatBot.java
+
     @Override
     protected void onConnect() {
         final ChatController uiController = this.mainController; 
+        final String serverUrl = getServer();
 
         // ⭐ 1. VERIFICACIÓN CRÍTICA: Impedir el NullPointerException
         if (uiController == null) {
@@ -455,26 +478,28 @@ public boolean isNickOnServer(String nick) {
         
         // 2. Bloquear la UI y notificar (Debe ir en el hilo de JavaFX)
         Platform.runLater(() -> {
-            // Deshabilitamos el input principal, pero el de verificación debe activarse más tarde (en el 001).
             uiController.getInputField().setDisable(true); 
-            uiController.appendSystemMessage("✅ Conectado al servidor: " + getServer());
-            
-            // El mensaje de sincronización debe retrasarse, ya que aún no ha comenzado.
-            // uiController.appendSystemMessage("🔄 Iniciando sincronización de usuarios globales. Espere..."); 
-            
-            // Mostrar mensaje de ESPERA DE VERIFICACIÓN
+            uiController.appendSystemMessage("✅ Conectado al servidor: " + serverUrl);
             uiController.appendSystemMessage("⚠️ Esperando mensaje de verificación Anti-Bot...");
             
             // [Añadir código para mostrar el indicador de progreso o pantalla de carga]
         });
 
-        // 3. Rutina de comandos, JOINs y Sincronización en un hilo separado
+        // ⭐ 3. DETECCIÓN DE SERVIDOR LOCAL Y ARRANQUE INMEDIATO ⭐
+        if (serverUrl != null && serverUrl.equalsIgnoreCase("irc.example.org")) {
+            log.warn("Servidor local detectado. Iniciando sincronización en onConnect.");
+            // Ejecutamos la sincronización de inmediato
+            iniciarSincronizacionGlobal(); 
+            // No necesitamos la rutina del Thread, ya que los JOINs fallarán de todos modos
+            // sin un delay que imite la verificación, pero usaremos el Thread para IDENTIFY.
+        }
+
+        // 4. Rutina de comandos, JOINs y Sincronización en un hilo separado
         new Thread(() -> {
             try {
-                // ⭐ Retraso para dar tiempo a que la conexión se estabilice
                 Thread.sleep(1000); 
 
-                // 3a. Identificación con NickServ
+                // 4a. Identificación con NickServ
                 String password = uiController.getPassword();
                 if (password != null && !password.isEmpty()) {
                     this.sendMessage("NickServ", "IDENTIFY " + password);
@@ -482,27 +507,24 @@ public boolean isNickOnServer(String nick) {
                     Thread.sleep(1500); 
                 }
 
-                // 3b. Ejecutar la Secuencia de Inicio (Comandos raw personalizados)
+                // 4b. Ejecutar la Secuencia de Inicio (Comandos raw personalizados)
                 if (uiController.isSecuenciaInicioActivada()) {
                     uiController.ejecutarSecuenciaInicio(true);
                     Thread.sleep(1000);
                 }
 
-                // 3c. Unión a canales automáticos
-                // ADVERTENCIA: Estos JOINs fallarán si la verificación Anti-Bot aún no se ha completado.
-                String[] canales = {"#tester", "#chat"}; // O la lista dinámica que uses
-                log.debug("Iniciando rutina de auto-join a canales predeterminados (puede fallar sin verificación).");
-                for (String canal : canales) {
-                    this.joinChannel(canal);
-                    log.debug("🔹 Enviado JOIN para canal: {}", canal);
-                    Thread.sleep(500); 
+                // 4c. Unión a canales automáticos
+                // Opcional: Solo unirse aquí si NO es el servidor local,
+                // o si el servidor local necesita un delay POST-IDENTIFY.
+                if (serverUrl == null || !serverUrl.equalsIgnoreCase("irc.example.org")) {
+                     String[] canales = {"#tester", "#chat"}; // O la lista dinámica que uses
+                     log.debug("Iniciando rutina de auto-join a canales predeterminados (puede fallar sin verificación).");
+                     for (String canal : canales) {
+                         this.joinChannel(canal);
+                         log.debug("🔹 Enviado JOIN para canal: {}", canal);
+                         Thread.sleep(500); 
+                     }
                 }
-                
-                // ⭐ 4. ¡LÍNEA ELIMINADA!
-                // ELIMINAMOS EL INICIO DE LA SINCRONIZACIÓN DE AQUÍ.
-                // listChannels() AHORA SOLO SE LLAMA DESDE onNotice (VERIFICATION_DONE).
-                // log.debug("📡 Iniciando fase de listado y sincronización de canales.");
-                // startChannelListAndSync(); // <--- ¡ELIMINADO!
                 
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -566,11 +588,14 @@ public boolean isNickOnServer(String nick) {
 
  
 
+ // Dentro de ChatBot.java
+
     @Override
     protected void onNotice(String sourceNick, String sourceLogin, String sourceHostname, String target, String message) {
         
         log.debug("Event: onNotice. Fuente: {}, Objetivo: {}", sourceNick, target);
         String source = sourceNick != null ? sourceNick : getServer();
+        final String serverUrl = getServer();
 
         // Siempre mostrar el mensaje en el log del sistema
         log.info("[NOTICE de {}] {}", source, message);
@@ -579,22 +604,21 @@ public boolean isNickOnServer(String nick) {
         boolean handledCritically = false;
 
         // ======================================================================
-        // ⭐ 1. DETECCIÓN DEL AVISO DE VERIFICACIÓN (Habilita el input principal) ⭐
+        // 1. DETECCIÓN DEL AVISO DE VERIFICACIÓN (Mensajes de URL/Código)
         // ======================================================================
-        if (message.contains("Necesitas verificar que no eres un bot") || message.contains("valida tu conexión") || message.contains("URL") || message.contains("http")) { // Añadimos detección de URL/http
+        if (message.contains("Necesitas verificar que no eres un bot") || message.contains("valida tu conexión") || message.contains("URL") || message.contains("http")) { 
             
+            // ... (Tu lógica de aviso de verificación se mantiene intacta) ...
             log.warn("⚠️ Aviso de verificación Anti-Bot detectado. Mostrando URL/Código.");
             
             Platform.runLater(() -> {
                 if (mainController != null) {
                     
-                    // ⭐⭐ SOLUCIÓN AL PROBLEMA: Mostrar el mensaje ORIGINAL que contiene la URL/código. ⭐⭐
                     mainController.appendSystemMessage("--- ⚠️ MENSAJE DE VALIDACIÓN CRÍTICO ⚠️ ---");
                     mainController.appendSystemMessage("➡️ SERVER: " + message); 
                     mainController.appendSystemMessage("--- --------------------------------- ---");
                     
-                    // Habilitamos el campo de texto principal para que el usuario pueda ingresar el código
-                    mainController.syncFinished(); // Asumiendo que este método habilita el input
+                    mainController.syncFinished(); // Habilita el input
                     
                     mainController.appendSystemMessage("💬 Por favor, ¡COPIA y PEGA el código de validación AQUÍ o RESUELVE el QUIZ!.");
                 }
@@ -606,6 +630,7 @@ public boolean isNickOnServer(String nick) {
         // 2. Lógica de Respuesta a Quizzes Anti-Bot (Cálculos)
         // ======================================================================
         if (message.contains("sum") || message.contains("calcula") || message.contains("resultado de") || message.contains("what is")) {
+            // ... (Tu lógica de respuesta a QUIZ se mantiene intacta) ...
             log.warn("⚠️ Mensaje Anti-Bot (QUIZ) detectado: {}", message);
             String respuesta = parseAndSolveBotQuiz(message);
             
@@ -617,7 +642,7 @@ public boolean isNickOnServer(String nick) {
                 
                 log.info("✅ Respuesta Anti-Bot enviada: {}", respuesta);
                 handledCritically = true;
-                return; // Salir si el quiz se resolvió.
+                return; 
             }
         }
         
@@ -625,30 +650,29 @@ public boolean isNickOnServer(String nick) {
         // 3. DETECCIÓN DE FINALIZACIÓN (Inicia la sincronización global)
         // ======================================================================
         if (message.contains("VERIFICATION_DONE")) {
+            
+            // ⭐ VERIFICACIÓN CRÍTICA: EVITAR DOBLE INICIALIZACIÓN EN SERVIDOR LOCAL ⭐
+            if (serverUrl != null && serverUrl.equalsIgnoreCase("irc.example.org")) {
+                log.warn("VERIFICATION_DONE ignorado en {}. La sincronización ya fue forzada en onConnect.", serverUrl);
+                handledCritically = true;
+                return; 
+            }
+            
+            // --- Lógica normal para otros servidores ---
             log.info("✅ Verificación Anti-Bot completada. Iniciando sincronización global de canales y usuarios.");
             
-            // Inicializar el contador
-            this.channelsTestedCount = 0;
-            
-            // Acciones de sincronización
-            this.listChannels(); 
-            sendRawLine("WHO *"); 
-            
-            // Notificación a la UI
-            Platform.runLater(() -> {
-                mainController.appendSystemMessage("✅ [Sistema] Verificación Anti-Bot exitosa. Solicitando lista global de usuarios y canales...");
-            });
+            // Llama al método refactorizado.
+            iniciarSincronizacionGlobal(); 
             
             handledCritically = true;
         }
         
         // ======================================================================
-        // 4. Muestra de NOTICE Genérico (Si no fue un mensaje crítico)
+        // 4. Muestra de NOTICE Genérico
         // ======================================================================
         if (!handledCritically) {
             Platform.runLater(() -> {
                  if (mainController != null) {
-                     // Si no fue un mensaje de verificación/quiz, lo mostramos como un NOTICE normal en el Status.
                      mainController.appendSystemMessage(
                          String.format("[NOTICE de %s] %s", source, message)
                      );
@@ -900,28 +924,27 @@ public boolean isNickOnServer(String nick) {
         
         log.debug("Event: onQuit. Usuario: {}, Razón: {}", sourceNick, reason);
         
-        // 1. Eliminar el nick de la lista global de conectados.
-        // Usamos toLowerCase() para la consistencia en IRC.
+        // 1. Intentar eliminar el nick de la lista global de conectados.
+        // Usamos toLowerCase() para la consistencia.
         if (connectedNicks.remove(sourceNick.toLowerCase())) {
             log.debug("QUIT: {} eliminado de la lista global. Notificando desconexión.", sourceNick);
             
-            // 2. Notificar al controlador para actualizar el estado del UsuarioConocido.
+            // 2. Notificar al controlador principal.
             Platform.runLater(() -> {
                 // Este método quitará el sombreado verde si sourceNick es un usuario conocido.
                 mainController.updateConnectionStatus(sourceNick, false);
                 
-                // 3. Mostrar el mensaje de sistema en la ventana principal.
-                mainController.appendSystemMessage("« " + sourceNick + " ha abandonado IRC (" + reason + ")");
-                
-                // ⭐ IMPORTANTE: No necesitamos enviar NAMES. PircBot maneja los eventos PART 
-                // en todos los canales donde estaba el usuario y tu lógica en onPart() 
-                // debería ser suficiente para limpiar las listas locales del canal.
+                // ⭐ NUEVA LÓGICA: Notificar a TODAS las ventanas de canal abiertas
+                // para que eliminen al usuario de sus ListViews.
+                mainController.notificarSalidaUsuario(sourceNick, null); // Pasamos 'null' para indicar QUIT global.
             });
+            
         } else {
-            // El usuario puede haber estado en un canal que el bot no estaba rastreando, 
-            // o la lista ya se actualizó. Mostrar solo el mensaje.
+            // El usuario ya se había actualizado o la lista no lo contenía, solo mostramos el mensaje.
             Platform.runLater(() -> {
-                mainController.appendSystemMessage("« " + sourceNick + " ha abandonado IRC (" + reason + ")");
+                // ⭐ Aún necesitamos notificar, incluso si el estado global estaba desincronizado,
+                // para que se muestre el mensaje de QUIT y se elimine al usuario de los ListViews.
+                mainController.notificarSalidaUsuario(sourceNick, null); 
             });
         }
     }
@@ -1153,9 +1176,7 @@ public boolean isNickOnServer(String nick) {
                     }
 
                  
-                 // Dentro de ChatBot.java -> onServerResponse() -> case 322:
-
-                 // ... [CÓDIGO ANTERIOR PARA EXTRACCIÓN DE CANAL, USUARIOS Y MODOS] ...
+                 
 
                          // 4. Extracción de Descripción (Topic) con tu regla específica:
                          String descripcionBruta;
@@ -1247,30 +1268,69 @@ public boolean isNickOnServer(String nick) {
             // Si estábamos en isListingChannels pero el código no era 322/323, continúa abajo.
         }
         
-        // ======================================================================
-        // ⭐ 2. LÓGICA DE CONTROL DE ESTADO, SINCRONIZACIÓN GLOBAL Y USUARIOS
-        // ======================================================================
+     // ⭐ 2a. Lógica de Delegado LWho (352 y 315 para ventana) ⭐
+        if (activeLWhoController != null && whoQueryChannel != null) {
+            
+            if (code == 352) { // RPL_WHOREPLY - Usuario individual para la ventana LWho
+                // Verificamos que sea la respuesta para el canal que consultamos.
+                if (response.contains(whoQueryChannel)) {
+                    
+                    IRCUser user = parseWhoResponse(response);
+                    
+                    if (user != null) {
+                        Platform.runLater(() -> {
+                            // Enviamos el usuario al delegado para que lo añada a su TableView
+                            // ¡Aquí activeLWhoController aún DEBE SER válido!
+                            activeLWhoController.receiveUser(user); 
+                        });
+                    }
+                }
+            } 
+            
+            else if (code == 315) { // RPL_ENDOFWHO - Fin de la consulta para la ventana LWho
+                if (response.contains(whoQueryChannel)) {
+                    
+                    Platform.runLater(() -> {
+                        // 1. Notificamos al delegado que la consulta ha finalizado.
+                        activeLWhoController.finishQuery(whoQueryChannel); 
+                        
+                        // 2. ⭐⭐ MOVIMIENTO CRÍTICO: Limpiamos el delegado DENTRO del Platform.runLater(). ⭐⭐
+                        // Esto asegura que la limpieza es la última acción ejecutada en la cola FX,
+                        // después de que todos los 352 (receiveUser) ya se hayan procesado.
+                        clearWhoDelegate(); 
+                    });
+                }
+            }
+        }
+        
+        // ⭐ 2b. Lógica General (Después de la ventana LWho) ⭐
         switch (code) {
             
-            // ⭐⭐ MOVIDO AQUÍ PARA ACTIVAR EL LOGIN COMPLETED ⭐⭐
-            case 001: // RPL_WELCOME - ¡El login ya está confirmado!
-            case 376: // RPL_ENDOFMOTD - Fin del mensaje del día.
+            case 001: // RPL_WELCOME
+            case 376: // RPL_ENDOFMOTD
+                // ... (Tu lógica existente para activar la bandera ircLoginCompleted) ...
                 if (!ircLoginCompleted) {
                     log.info("✅ IRC Login confirmado con código {}. Habilitando isIrcLoginCompleted.", code);
-                    this.ircLoginCompleted = true; // ⭐ ACTIVACIÓN DE LA BANDERA
+                    this.ircLoginCompleted = true; 
                 }
                 break;
 
-            case 352: // WHO Reply (RPL_WHOREPLY)
-                // Lógica para parsear 352 y añadir el nick a connectedNicks
+            case 352: { // WHO Reply (RPL_WHOREPLY) - SINCRONIZACIÓN GLOBAL
+                // Aquí MANTENEMOS la lógica para añadir nicks a la lista global conectada (connectedNicks), 
+                // ya que esta consulta se usa para el inicio del Bot (WHO *)
+                
                 final String[] whoTokens = response.split(" "); 
                 if (whoTokens.length >= 7) { 
                     final String nickName = whoTokens[5];
                     connectedNicks.add(nickName.toLowerCase()); 
+                    // Nota: Si el Bot hace WHO *, esta lógica se dispara para el LISTADO GLOBAL.
                 }
                 break; 
+            }
                  
-            case 315: // End of WHO List (RPL_ENDOFWHO)
+            case 315: { // End of WHO List (RPL_ENDOFWHO) - SINCRONIZACIÓN GLOBAL
+                // Este es el fin de la consulta WHO * (sincronización global)
+                
                 log.info("✅ Recibido 315: Sincronización global de nicks completada. Total: {}", connectedNicks.size());
                 
                 Platform.runLater(() -> {
@@ -1279,6 +1339,7 @@ public boolean isNickOnServer(String nick) {
                     }
                 });
                 break;
+            }
 
             // ======================================================================
             // ⭐ 3. LÓGICA DE USUARIOS EN CANAL (NAMES - 353/366)
@@ -1412,4 +1473,126 @@ public boolean isNickOnServer(String nick) {
             log.warn("Channel List: No conectado. No se puede solicitar la lista de canales.");
         }
     }
+    
+ // Dentro de ChatBot.java
+
+    /**
+     * Elimina el canal del Set interno que rastrea los canales unidos.
+     * Esto es crucial para que isJoined() devuelva false después de un /part manual.
+     */
+    public void removeChannelFromJoinedState(String channelName) {
+        // Asegúrate de que 'joinedChannels' es el Set que usas para rastrear el estado
+        // y de que manejas las mayúsculas/minúsculas de forma consistente (aquí, en minúsculas).
+        joinedChannels.remove(channelName.toLowerCase());
+    }
+    
+ // Dentro de ChatBot.java
+
+    /**
+     * Centraliza la lógica para iniciar la sincronización global de canales y usuarios,
+     * y habilita la interfaz de usuario.
+     * Se llama desde onConnect (para servidores locales) o desde onNotice (para VERIFICATION_DONE).
+     */
+    private void iniciarSincronizacionGlobal() {
+        final ChatController uiController = this.mainController;
+        
+        // 1. Inicializar el contador para listChannels (si aplica)
+        this.channelsTestedCount = 0; 
+        
+        // 2. Acciones de sincronización
+        this.listChannels(); // Pedir lista de canales
+        this.sendRawLine("WHO *"); // Pedir lista de usuarios globales
+        
+        // 3. Notificación a la UI
+        Platform.runLater(() -> {
+            if (uiController != null) {
+                uiController.appendSystemMessage("✅ [Sistema] Inicialización de sincronización global...");
+                
+                // Habilita el campo de comandos y otros elementos de la UI (Input Field)
+                uiController.syncFinished(); 
+            }
+        });
+    }
+    
+
+ 
+
+ // Dentro de ChatBot.java (Método Auxiliar)
+
+    /**
+     * Parsea la línea de respuesta 352 del servidor, ajustándose al formato parcial 
+     * que PircBot parece estar entregando (omitiendo el prefijo :servidor 352).
+     * Formato recibido: nick_bot #canal user host servidor nick flags hops :realName
+     *
+     * @param response La línea que comienza después de ":servidor 352 ".
+     * @return Un objeto IRCUser con los campos rellenados.
+     */
+    private IRCUser parseWhoResponse(String response) {
+        try {
+            // La línea comienza con El_ArWeN #canal...
+            // Usamos una división que NO limite el número de partes.
+            String[] parts = response.split(" "); 
+            
+            // Necesitamos al menos 7 partes: nick_bot, #canal, user, host, server, nick, flags/resto.
+            if (parts.length < 7) {
+                log.warn("Formato 352 inesperado (menos de 7 tokens). Línea: {}", response);
+                return null;
+            }
+
+            // ⭐⭐ ASIGNACIÓN DE ÍNDICES CORREGIDA ⭐⭐
+            // El nick del bot (parts[0]) lo descartamos, ya que no es el nick del usuario en el canal.
+            String channel = parts[1]; // #el_jardin_musical
+            String user = parts[2];    // sgomx o radio o eljardinm
+            String host = parts[3];    // i-n44.bsi.qrubuv.IP o la.musica...
+            String server = parts[4];  // lima.chatzona.org  (4ª Columna)
+            String nick = parts[5];    // SeRgi0 o ElJardinMusical o MaravillaDj (1ª Columna)
+            
+            // El segmento de Flags (Ej: G+r :0 I3wjfCN8L...) comienza en parts[6]
+            String flagsRaw = parts[6]; 
+            String flags = flagsRaw.replaceFirst("[HG]", ""); // Quitamos G/H -> (+r) o (@r) (3ª Columna)
+
+            // --- 2. Extracción del Nombre Real (5ª Columna) ---
+            // El Nombre Real es todo lo que está después del primer ':' en este formato truncado.
+            
+            String realName = "N/A - Parsing Error";
+            
+            // Buscamos el índice del primer ':' después de parts[6]
+            // Concatenamos las partes restantes para buscar el ":"
+            StringBuilder remaining = new StringBuilder();
+            for (int i = 6; i < parts.length; i++) {
+                remaining.append(parts[i]).append(" ");
+            }
+            String remainingString = remaining.toString().trim();
+
+            // El Nombre Real comienza después del primer ':' en esta subcadena
+            int firstColonIndex = remainingString.indexOf(":"); 
+
+            if (firstColonIndex != -1 && firstColonIndex + 1 < remainingString.length()) {
+                // El Nombre Real es la subcadena que sigue al ':'
+                realName = remainingString.substring(firstColonIndex + 1).trim(); 
+            } else {
+                 // Si el ':' no se encontró o está al final, el nombre real es "N/A"
+                 realName = "N/A - No se pudo aislar el Nombre Real.";
+            }
+
+
+            // Crear y rellenar el objeto IRCUser
+            IRCUser ircUser = new IRCUser(nick);
+            ircUser.setUser(user);
+            ircUser.setHost(host);
+            ircUser.setUserHost(user + "@" + host); 
+            ircUser.setFlags(flags);        
+            ircUser.setServer(server);      
+            ircUser.setRealName(realName); 
+            ircUser.setChannel(channel);
+
+            return ircUser;
+            
+        } catch (Exception e) {
+            // En caso de error inesperado, loguear para diagnóstico.
+            log.error("Error FATAL al parsear respuesta WHO (352): {}", response, e);
+            return null;
+        }
+    }
+    
 }
