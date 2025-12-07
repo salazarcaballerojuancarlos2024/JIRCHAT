@@ -26,10 +26,8 @@ import java_irc_chat_client.IRCUser;
 import java_irc_chat_client.LWhoController;
 import javafx.application.Platform;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.Map;
 import java.io.IOException;
-import org.slf4j.Logger;
-import java_irc_chat_client.ChatController;
+
 
 
 /**
@@ -712,6 +710,7 @@ private void clearWhoDelegate() {
     @Override
     protected void onJoin(String channel, String sender, String login, String hostname) {
         super.onJoin(channel, sender, login, hostname);
+        String userHostIdentity = sender + "@" + login + "." + hostname; 
         
         // Normalizar el nombre del canal para asegurar la consistencia.
         final String lowercaseChannel = channel.toLowerCase();
@@ -763,14 +762,20 @@ private void clearWhoDelegate() {
         // ----------------------------------------------------------------------------------
         // Lógica para OTROS usuarios que se unen (actualiza lista y contador de ventana)
         // ----------------------------------------------------------------------------------
+        
+
         else if (ventanaWrapper != null) {
             // Esta lógica solo se ejecuta si la ventana fue abierta previamente por el usuario.
             Platform.runLater(() -> {
+                
+                // La variable 'userHostIdentity' ya ha sido declarada y construida arriba.
+                
                 // 1. Notificar la unión en la ventana de chat
                 ventanaWrapper.controller.appendSystemMessage(
                     "» " + sender + " se ha unido a " + channel, 
                     CanalController.MessageType.JOIN, 
-                    sender
+                    sender,
+                    userHostIdentity // ⬅️ Variable accesible y usada aquí
                 );
                 
                 // 2. Agregar el nuevo usuario a la lista local y actualizar el contador.
@@ -781,7 +786,7 @@ private void clearWhoDelegate() {
         }
     }
 
- // Dentro de ChatBot.java
+ 
 
     @Override
     protected void onUserList(String channel, org.jibble.pircbot.User[] users) {
@@ -847,8 +852,6 @@ private void clearWhoDelegate() {
         log.debug("Lista de usuarios y contador ({}) actualizados para {}", userCount, channel);
     }
 
-
-
     @Override
     protected void onPart(String channel, String sender, String login, String hostname) {
         super.onPart(channel, sender, login, hostname);
@@ -856,56 +859,55 @@ private void clearWhoDelegate() {
         final String lowercaseChannel = channel.toLowerCase();
         log.debug("Event: onPart. Canal: {}, Usuario: {}", channel, sender);
         
+        // --- CONSTRUCCIÓN DE LA MÁSCARA DEL USUARIO QUE SALE ---
+        // Esta identidad es crucial para la nueva funcionalidad del CanalController.
+        // Se declara aquí para ser accesible en los bloques Platform.runLater().
+        final String userHostIdentity = sender + "@" + login + "." + hostname;
+        
         // ======================================================================
         // 1. Lógica cuando TU PROPIO BOT sale (sender.equalsIgnoreCase(getNick()))
         // ======================================================================
         if (sender.equalsIgnoreCase(getNick())) {
             
-            // ⭐ VERIFICACIÓN CRÍTICA PARA LA SINCRONIZACIÓN INICIAL ⭐
+            // ⭐ Lógica de Sincronización (Se mantiene intacta) ⭐
             if (isSyncingChannel) {
                 log.debug("SYNC: Bot salió de {} con éxito. Moviendo al siguiente canal.", channel);
-                
-                // 1. Desactivamos el flag de sincronización para evitar llamadas recursivas accidentales
-                // y para que el próximo canal pueda empezar limpio.
-                // Esto es crucial si 'processNextSyncChannel' establece el flag de nuevo.
                 isSyncingChannel = false; 
-                
-                // ⭐⭐⭐ CORRECCIÓN CRÍTICA: LLAMAR AL MOTOR DEL BUCLE ⭐⭐⭐
-                // Asegúrate de que 'processNextSyncChannel()' exista y contenga el chequeo isEmpty().
                 processNextSyncChannel(); 
-                
-                // Ya que estamos en modo SYNC, NO debemos ejecutar la lógica normal de cierre de ventana.
                 return; 
             }
             
             // --- Lógica normal de PART del bot (cuando no está sincronizando) ---
-            // Se mantiene la lógica original para cuando el usuario manualmente hace /part
-            
             log.debug("Propio PART: Cerrando ventana de canal y eliminando de rastreador.");
             
             mainController.removerBotonCanal(channel); 
-            // joinedChannels.remove(lowercaseChannel); // (Asegúrate de que esta línea esté comentada o implementada)
 
             Platform.runLater(() -> {
                 mainController.cerrarCanalDesdeVentana(channel); 
-                mainController.appendSystemMessage("« Has salido del canal " + channel);
+                
+                // 💡 NOTA: Aquí se llama a appendSystemMessage del mainController (Status Box), 
+                // que probablemente solo espera un argumento (String mensaje).
+                // Si el mainController ha sido modificado para requerir 4 args, también debe corregirse.
+                // Asumo que esta línea está bien:
+                mainController.appendSystemMessage("« Has salido del canal " + channel); 
             });
             
         // ======================================================================
         // 2. Lógica para cuando otro usuario sale (PART normal)
         // ======================================================================
         } else {
-            // ... (Tu lógica original para usuarios normales que hacen PART) ...
             CanalVentana ventanaWrapper = mainController.getCanalesAbiertos().get(lowercaseChannel);
             
             if (ventanaWrapper != null) {
                 Platform.runLater(() -> {
                     String mensaje = "« " + sender + " ha salido de " + channel;
                     
+                    // ⭐ LLAMADA CORREGIDA: Incluye el cuarto argumento (userHostIdentity) ⭐
                     ventanaWrapper.controller.appendSystemMessage(
                         mensaje, 
                         CanalController.MessageType.PART, 
-                        sender
+                        sender,
+                        userHostIdentity // ⬅️ CUARTO ARGUMENTO AÑADIDO
                     );
                     
                     ventanaWrapper.controller.removeUserFromList(sender);
@@ -924,32 +926,32 @@ private void clearWhoDelegate() {
         
         log.debug("Event: onQuit. Usuario: {}, Razón: {}", sourceNick, reason);
         
+        // ⭐ PASO CLAVE: CONSTRUIR LA IDENTIDAD COMPLETA
+        final String userHostIdentity = sourceNick + "@" + sourceLogin + "." + sourceHostname;
+        
         // 1. Intentar eliminar el nick de la lista global de conectados.
-        // Usamos toLowerCase() para la consistencia.
         if (connectedNicks.remove(sourceNick.toLowerCase())) {
             log.debug("QUIT: {} eliminado de la lista global. Notificando desconexión.", sourceNick);
             
             // 2. Notificar al controlador principal.
             Platform.runLater(() -> {
-                // Este método quitará el sombreado verde si sourceNick es un usuario conocido.
                 mainController.updateConnectionStatus(sourceNick, false);
                 
-                // ⭐ NUEVA LÓGICA: Notificar a TODAS las ventanas de canal abiertas
-                // para que eliminen al usuario de sus ListViews.
-                mainController.notificarSalidaUsuario(sourceNick, null); // Pasamos 'null' para indicar QUIT global.
+                // ⭐ LLAMADA CORREGIDA: Incluye la máscara de host como tercer argumento
+                // Pasamos 'null' para el canal para indicar que es un QUIT global.
+                mainController.notificarSalidaUsuario(sourceNick, null, userHostIdentity); 
             });
             
         } else {
-            // El usuario ya se había actualizado o la lista no lo contenía, solo mostramos el mensaje.
             Platform.runLater(() -> {
-                // ⭐ Aún necesitamos notificar, incluso si el estado global estaba desincronizado,
-                // para que se muestre el mensaje de QUIT y se elimine al usuario de los ListViews.
-                mainController.notificarSalidaUsuario(sourceNick, null); 
+                // ⭐ LLAMADA CORREGIDA: Incluye la máscara de host como tercer argumento
+                // Se notifica la salida para que se muestre el mensaje.
+                mainController.notificarSalidaUsuario(sourceNick, null, userHostIdentity); 
             });
         }
     }
 
- 
+ // En ChatBot.java
 
     @Override
     protected void onNickChange(String oldNick, String login, String hostname, String newNick) {
@@ -957,30 +959,36 @@ private void clearWhoDelegate() {
         
         log.debug("Event: onNickChange. De {} a {}", oldNick, newNick);
         
+        // ⭐ PASO CLAVE: CONSTRUIR LA IDENTIDAD COMPLETA
+        // Usamos el newNick en la máscara, ya que es la identidad actual.
+        final String userHostIdentity = newNick + "@" + login + "." + hostname;
+        
         // 1. Actualizar la lista global de nicks
-        // Usamos toLowerCase() para la lista global
-        if (connectedNicks.remove(oldNick.toLowerCase())) {
+        boolean wasConnected = connectedNicks.remove(oldNick.toLowerCase());
+        if (wasConnected) {
             connectedNicks.add(newNick.toLowerCase());
             log.debug("NICK: Lista global actualizada. {} -> {}.", oldNick, newNick);
-            
-            // 2. Notificar al controlador para que actualice el UsuarioConocido.
-            Platform.runLater(() -> {
-                // Este método gestiona el cambio de nick en la lista de usuarios conocidos.
-                mainController.handleNickChange(oldNick, newNick);
-                
-                // 3. Mostrar el mensaje de sistema.
-                mainController.appendSystemMessage("↔️ " + oldNick + " ahora es conocido como " + newNick);
-            });
-        } else {
-            // El usuario puede no haber sido un usuario conocido, pero mostramos el mensaje.
-            Platform.runLater(() -> {
-                mainController.appendSystemMessage("↔️ " + oldNick + " ahora es conocido como " + newNick);
-            });
         }
         
-        // ⭐ ELIMINACIÓN CRÍTICA: Se remueve el bucle for y el sendRawLine("NAMES...")
-        // La actualización de las listas de usuarios en las ventanas de canal abiertas
-        // es manejada por tu lógica existente en ChatController o por PircBot.
+        // 2. Notificar a la UI
+        Platform.runLater(() -> {
+            // Actualizar el estado global de nicks conocidos y el List View principal (si aplica)
+            mainController.handleNickChange(oldNick, newNick);
+            
+            // Mostrar el mensaje de sistema en la ventana principal (Status Box).
+            mainController.appendSystemMessage("↔️ " + oldNick + " ahora es conocido como " + newNick);
+            
+            // 3. ⭐ LÓGICA NUEVA: ITERAR y actualizar ListViews de CANALES ABIERTOS
+            // Asumiendo que mainController.getCanalesAbiertos() devuelve Map<String, CanalVentana>
+            for (Map.Entry<String, CanalVentana> entry : mainController.getCanalesAbiertos().entrySet()) {
+                CanalController controller = entry.getValue().controller;
+                
+                if (controller != null) {
+                    // Llamamos al nuevo método para que el CanalController se encargue de su lista local.
+                    controller.handleNickChange(oldNick, newNick, userHostIdentity);
+                }
+            }
+        });
     }
 
     

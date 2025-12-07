@@ -74,6 +74,9 @@ public class CanalController {
     public void setMainController(ChatController mainController) { this.mainController = mainController; }
     public void setUserDoubleClickHandler(Consumer<String> handler) { this.onUserDoubleClick = handler; }
     
+ // Dentro de CanalController.java
+    public enum MessageType { JOIN, PART, KICK }
+    
     // --- Lógica de Manejo de Servidor ---
     
     /**
@@ -310,6 +313,8 @@ public class CanalController {
         }
     }
 
+ 
+
  // Dentro de CanalController.java
 
     private void handleCommand(String cmd) {
@@ -320,20 +325,28 @@ public class CanalController {
             bot.partChannel(channelName); 
             
             // ⭐ PASO CRÍTICO: LIMPIEZA DEL ESTADO INTERNO DEL BOT ⭐
-            // Debemos asegurar que el ChatBot sepa que YA NO está en este canal, 
-            // para que la próxima vez que se use /join, el bot ejecute JOIN y no solo NAMES.
             if (bot instanceof ChatBot) {
-                // Asumiendo que has implementado este método en tu ChatBot para eliminar
-                // el canal de su Set interno de canales unidos (ej: joinedChannels.remove(channelName.toLowerCase()))
                 ((ChatBot)bot).removeChannelFromJoinedState(channelName); 
             }
 
+            // --- CONSTRUCCIÓN DE LA MÁSCARA DEL USUARIO LOCAL (BOT) ---
+            String myNick = bot.getNick();
+            
+            // 🚨 ASUNCIÓN CLAVE: La máscara del usuario local (bot) se construye con:
+            // [nick] + "@" + [ident o login] + "." + [host o IP]
+            // Se utiliza bot.getLogin() como el 'ident' (lo que el bot envió como IDENT)
+            // La parte del host/IP es difícil de obtener con PircBot, por lo que usaremos una cadena descriptiva
+            // o asumiremos que ChatBot expone el HostName:
+            
+            // Ejemplo de construcción:
+            String myHostIdentity = myNick + "@" + bot.getLogin() + ".IP"; // Usando .IP como marcador de posición si no hay host exacto
+
             // 2. Notificar a la UI que estamos saliendo
-            appendSystemMessage("➡ Saliendo de " + channelName, MessageType.PART, bot.getNick());
+            // ⭐ LLAMADA ACTUALIZADA: Ahora incluye el cuarto parámetro, userHost.
+            appendSystemMessage("➡ Saliendo de " + channelName, MessageType.PART, myNick, myHostIdentity);
             
             // 3. Notificar al ChatController para cerrar la ventana del canal
             if (mainController != null) {
-                // Utilizamos Platform.runLater ya que cerraremos componentes de UI (Stage)
                 Platform.runLater(() -> mainController.cerrarCanalDesdeVentana(channelName));
             }
 
@@ -445,27 +458,35 @@ public class CanalController {
 
     public String getCanal() { return channelName; } // Usar channelName
 
-    public enum MessageType { JOIN, PART, KICK }
+    
 
-    // --- Métodos de UI (appendMessage, appendSystemMessage, autoScroll, parseIRCMessage, ircColorToFX) ---
     
  // En CanalController.java
 
     /**
      * Muestra un mensaje de chat normal (<Usuario> Mensaje) en el VBox.
-     * CORREGIDO: Usa chatBox y la lógica de TextFlow.
+     * CORREGIDO: Añade la marca de tiempo [HH:mm] seguida de 20 espacios.
      */
     public void appendMessage(String usuario, String mensaje) {
-        // ⭐ 3. LOGGING: Registrar el mensaje antes de mostrarlo en la UI
+        // 1. LOGGING: Registrar el mensaje antes de mostrarlo en la UI
         if (channelName != null) {
             ChatLogger.log(this.channelName, usuario, mensaje);
         }
         
+        // ⭐ OBTENER LA HORA CON ESPACIADO ⭐
+        String timestampWithSpacing = getCurrentTimestampWithSpacing();
+
         Platform.runLater(() -> {
-            // Usa el campo FXML declarado en la clase
             if (chatBox == null) return; 
 
             TextFlow flow = new TextFlow();
+            
+            // 1. Añadir la marca de tiempo y el espaciado
+            Text timeText = new Text(timestampWithSpacing);
+            timeText.setFill(Color.web("#808080")); // Gris
+            timeText.setFont(Font.font("System", FontWeight.NORMAL, 12));
+            flow.getChildren().add(timeText);
+            
             Text userText = new Text("<" + usuario + "> ");
             
             // Estilo del usuario
@@ -485,46 +506,80 @@ public class CanalController {
         });
     }
 
+ 
+
+ // En CanalController.java
+
     /**
      * Muestra mensajes del sistema (JOIN, PART, KICK) en la UI.
-     * CORREGIDO: Añadida la lógica de logging.
+     * Acepta y muestra la máscara completa del usuario (ej: nick@host.ip).
+     * * @param mensaje Contenido del mensaje del sistema (ej: "se ha unido al canal").
+     * @param type Tipo de evento (JOIN, PART, KICK).
+     * @param nickInvolucrado Nick del usuario involucrado en el evento (para el logging).
+     * @param userHost La máscara completa del usuario involucrado (ej: "Julia64M@14i-49f.kgp.3vk1vf.IP").
      */
-    public void appendSystemMessage(String mensaje, MessageType type, String nickSalida) {
-        // ⭐ 3. LOGGING: Registrar el mensaje del sistema (JOIN/PART/KICK)
+    public void appendSystemMessage(String mensaje, MessageType type, String nickInvolucrado, String userHost) {
+        // 1. LOGGING: Registrar el mensaje del sistema
         if (channelName != null) {
-            ChatLogger.logSystem(this.channelName, mensaje);
+            // Usamos el nick limpio para el log, ya que es el que se usa en el formato estándar.
+            ChatLogger.logSystem(this.channelName, mensaje); 
         }
         
+        // ⭐ OBTENER LA HORA CON 5 ESPACIOS ⭐
+        String timestampWithSpacing = getCurrentTimestampWithSpacing();
+
         Platform.runLater(() -> {
             if (chatBox == null) return; 
 
             TextFlow flow = new TextFlow();
             flow.setStyle("-fx-background-color: #FFF8DC; -fx-padding: 3px;");
+            
+            // --- 1. Añadir la marca de tiempo y el espaciado (Gris)
+            Text timeText = new Text(timestampWithSpacing);
+            timeText.setFill(Color.web("#808080")); 
+            timeText.setFont(Font.font("System", FontWeight.NORMAL, 12));
+            flow.getChildren().add(timeText);
+            
+            // --- 2. Construir la cadena de identificación completa (Ej: [nick@host.ip])
+            String fullIdentity = "[" + userHost + "]";
+            
+            // --- 3. Componentes del Mensaje
             Text prefix = new Text("___________________________> ");
+            Text identityText = new Text(fullIdentity + " "); // Identidad + espacio
             Text body = new Text(mensaje);
             Text suffix = new Text(" <___________________________");
 
             // Asignar color basado en el tipo de evento
-            switch (type) {
-                case JOIN -> body.setFill(Color.web("#009300")); // Verde
-                case PART -> body.setFill(Color.web("#FC7F00")); // Naranja
-                case KICK -> body.setFill(Color.web("#FF0000")); // Rojo
-            }
+            Color eventColor = switch (type) {
+                case JOIN -> Color.web("#009300"); // Verde
+                case PART -> Color.web("#FC7F00"); // Naranja
+                case KICK -> Color.web("#FF0000"); // Rojo
+            };
+            
+            body.setFill(eventColor);
+            body.setFont(Font.font("System", FontWeight.BOLD, 12));
 
+            // Estilos para la identidad y los prefijos/sufijos
+            identityText.setFill(Color.web("#808080")); // Máscara en gris
+            identityText.setFont(Font.font("System", FontWeight.NORMAL, 12));
+            
             prefix.setFill(Color.DARKGRAY); suffix.setFill(Color.DARKGRAY);
             prefix.setFont(Font.font("System", FontWeight.NORMAL, 12));
-            body.setFont(Font.font("System", FontWeight.BOLD, 12));
             suffix.setFont(Font.font("System", FontWeight.NORMAL, 12));
 
-            flow.getChildren().addAll(prefix, body, suffix);
+            // 4. Montar el flujo: [HH:mm]      _________________> [nick@host.ip] MENSAJE <_________________
+            flow.getChildren().addAll(prefix, identityText, body, suffix);
+            
             flow.setLineSpacing(1.2);
             chatBox.getChildren().add(flow);
             autoScroll();
 
             // Muestra popup al salir (si es un evento PART y el usuario salió)
-            if (type == MessageType.PART && nickSalida != null) showExitPopup(nickSalida, channelName);
+            if (type == MessageType.PART && nickInvolucrado != null) showExitPopup(nickInvolucrado, channelName);
         });
     }
+    
+    
     /**
      * Realiza el auto-scroll en el área de chat.
      */
@@ -699,5 +754,85 @@ public class CanalController {
             receivingNames = false;
         });
     }
+    
+ 
+    /**
+     * Obtiene la hora actual formateada como [HH:mm] seguida de 20 espacios en blanco.
+     * @return String con la hora y el espaciado.
+     */
+    private String getCurrentTimestampWithSpacing() {
+        // Usamos java.time para obtener la hora actual
+        java.time.LocalTime now = java.time.LocalTime.now();
+        
+        // Formato de 24 horas (HH:mm)
+        java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("HH:mm");
+        
+        // ⭐ Incluimos los 20 espacios en blanco
+        return "[" + now.format(formatter) + "]" + "     "; 
+    }
+    
+ // Nuevo método en CanalController.java
+
+    /**
+     * Gestiona el cambio de nick de un usuario dentro del canal.
+     * 1. Actualiza la lista de usuarios (manteniendo el modo @/+).
+     * 2. Muestra un mensaje de sistema con el nuevo formato [nick@host.ip].
+     * @param oldNick El nick anterior.
+     * @param newNick El nuevo nick.
+     * @param hostIdentity La máscara completa del usuario (ej: newNick@login.host).
+     */
+    public void handleNickChange(String oldNick, String newNick, String hostIdentity) {
+        Platform.runLater(() -> {
+            
+            // 1. Buscar y remover el oldNick, guardando su prefijo (modo @/+)
+            String prefix = "";
+            
+            // Buscamos el nick en la lista (que puede tener prefijos)
+            Optional<String> match = usersList.stream()
+                .filter(userInList -> userInList.replaceFirst("[@+]", "").equalsIgnoreCase(oldNick))
+                .findFirst();
+
+            if (match.isPresent()) {
+                String fullOldNick = match.get();
+                
+                // Extraer el prefijo si existe
+                if (fullOldNick.startsWith("@")) prefix = "@";
+                else if (fullOldNick.startsWith("+")) prefix = "+";
+                
+                // Remover el nick viejo de la lista Observable
+                usersList.remove(fullOldNick);
+                
+                // 2. Añadir el nuevo nick con el prefijo mantenido
+                String newNickWithPrefix = prefix + newNick;
+                
+                // 3. Forzar la actualización/reordenamiento de la lista
+                // Se debe actualizar la lista de usuarios (sin el contador)
+                List<String> currentNicks = usersList.stream()
+                                                .filter(u -> !u.startsWith("Usuarios:"))
+                                                .collect(Collectors.toList());
+                
+                currentNicks.add(newNickWithPrefix); // Añadir el nick nuevo a la lista temporal
+                
+                // Llamamos a updateUsers() para reordenar la lista, actualizar el contador y aplicar
+                // el sombreado verde, ya que 'updateUsers' usa 'knownNicks' internamente.
+                updateUsers(currentNicks); 
+                
+                // 4. Mostrar el mensaje de sistema en el chat del canal
+                // El cuerpo del mensaje es lo que se muestra entre los guiones.
+                String systemMessageBody = "↔️ " + oldNick + " ahora es conocido como " + newNick;
+                
+                // Reutilizamos la lógica de appendSystemMessage (que espera 4 argumentos)
+                appendSystemMessage(
+                    systemMessageBody, 
+                    MessageType.PART, // Usamos PART para un color neutral (o crea NICKCHANGE)
+                    newNick,          // El nick final (para el popup/logging)
+                    hostIdentity      // La máscara (newNick@host.ip)
+                );
+                
+                log.debug("Nick cambiado localmente de {} a {} en canal {}", oldNick, newNick, channelName);
+            }
+        });
+    }
+    
 
 } 

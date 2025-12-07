@@ -1660,61 +1660,60 @@ public void agregarCanalAbierto(String channelName) throws IOException {
      * * @param nick El nick del usuario que ha salido.
      * @param canal Si es null o vacío, se asume un QUIT (salida del servidor) y se revisan todos los canales.
      */
-    public void notificarSalidaUsuario(String nick, String canal) {
+ 
+
+ // ⭐ LA FIRMA AHORA ACEPTA EL hostMask COMO TERCER ARGUMENTO
+ // En ChatController.java
+
+    public void notificarSalidaUsuario(String nick, String canal, String hostMask) {
         
-        final boolean isQuit = (canal == null || canal.isEmpty());
+        final boolean isQuit = (canal == null || canal.isEmpty()); // True para QUIT
 
         // 1. Mostrar el mensaje de sistema en la ventana principal (Status Box).
+        // ⭐ CORRECCIÓN: Se elimina la variable 'reason' de la construcción del mensaje.
         String mensaje = isQuit 
             ? "« " + nick + " ha abandonado IRC (QUIT)"
             : "« " + nick + " ha abandonado el canal " + canal;
 
         appendSystemMessage(mensaje);
         
-        // ⭐ 2. GESTIÓN DEL LISTVIEW PRINCIPAL (Fondo verde de usuario CONECTADO) ⭐
-        // Solo actualizamos el estado global a 'desconectado' si es una SALIDA DEL SERVIDOR (QUIT).
+        // ⭐ 2. GESTIÓN DEL LISTVIEW PRINCIPAL (Se mantiene) ⭐
         if (isQuit) {
-            // updateConnectionStatus(nick, false) quita el sombreado verde del usuario 
-            // en la lista principal y lo marca internamente como desconectado.
             updateConnectionStatus(nick, false); 
         }
-        // Si es un PART, el usuario sigue conectado al servidor. El fondo verde en la lista principal permanece.
         
-        // 3. Recorrer todas las ventanas de canal abiertas (Actualización de ListViews de canal)
+        // 3. Recorrer todas las ventanas de canal abiertas
         Platform.runLater(() -> {
             
-            // El mapa canalesAbiertos contiene todas las instancias de CanalController
             for (Map.Entry<String, CanalVentana> entry : canalesAbiertos.entrySet()) {
                 CanalController controller = entry.getValue().controller;
                 String nombreCanalAbierto = entry.getKey();
                 
                 if (controller == null) continue;
                 
-                // Lógica de eliminación:
-                
-                // A) Es un evento QUIT: Afecta a TODOS los canales (eliminación física).
+                // A) Es un evento QUIT: Afecta a TODOS los canales.
                 if (isQuit) { 
                     
-                    // Eliminar al usuario físicamente de la lista de cualquier canal que lo contenga.
                     controller.removeUserFromList(nick);
                     
-                    // Opcional: Mostrar el mensaje de QUIT en el VBox del canal.
+                    // ⭐ LLAMADA CORRECTA EN EL CANAL CONTROLLER (4 argumentos) ⭐
                     controller.appendSystemMessage("« " + nick + " ha salido del servidor.", 
                                                   CanalController.MessageType.PART, 
-                                                  nick);
+                                                  nick,
+                                                  hostMask); 
                     
                 } 
                 
-                // B) Es un evento PART: Solo afecta al canal de salida (eliminación física).
+                // B) Es un evento PART: Solo afecta al canal de salida.
                 else if (nombreCanalAbierto.equalsIgnoreCase(canal)) {
                      
-                     // Eliminar al usuario físicamente de la lista del canal afectado.
                      controller.removeUserFromList(nick);
                      
-                     // Mostrar el mensaje de PART en el VBox del canal.
+                     // ⭐ LLAMADA CORRECTA EN EL CANAL CONTROLLER (4 argumentos) ⭐
                      controller.appendSystemMessage("« " + nick + " ha abandonado el canal.", 
                                                    CanalController.MessageType.PART, 
-                                                   nick);
+                                                   nick,
+                                                   hostMask); 
                 }
             }
         });
